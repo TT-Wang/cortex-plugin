@@ -64,6 +64,56 @@ _EPISODE_HAIKU_SYSTEM = (
 # -----------------------------------------------------------------------
 
 
+# Char budget per extraction chunk (~4 chars/token → ~90k tokens), leaving
+# headroom under Haiku's ~200k-token context for the system prompt + output.
+_MAX_EXTRACT_CHARS = 350_000
+
+
+def _chunk_messages(messages: list, max_chars: int = _MAX_EXTRACT_CHARS) -> list:
+    """Group turn strings into chunks each ≤ max_chars (single oversized turns
+    are truncated). Prevents a large delta from exceeding Haiku's context limit.
+    Always returns at least one chunk (possibly empty) for a non-empty input."""
+    chunks: list = []
+    cur: list = []
+    cur_len = 0
+    for m in messages:
+        if len(m) > max_chars:  # one turn bigger than the whole budget — truncate
+            m = m[:max_chars]
+        if cur and cur_len + len(m) > max_chars:
+            chunks.append(cur)
+            cur, cur_len = [], 0
+        cur.append(m)
+        cur_len += len(m) + 2
+    if cur:
+        chunks.append(cur)
+    return chunks
+
+
+def _head_tail_sample(messages: list, max_chars: int = _MAX_EXTRACT_CHARS) -> str:
+    """Join messages into one blob ≤ max_chars, keeping the session's start and
+    end (head 60% / tail 40%) when it would otherwise overflow. Used for the
+    per-session episode summary so a long session never exceeds Haiku's context
+    (the "began with X ... ended with Y" arc is what the summary needs)."""
+    joined = "\n\n".join(messages)
+    if len(joined) <= max_chars:
+        return joined
+    head_budget = max_chars * 6 // 10
+    head, hlen = [], 0
+    for m in messages:
+        if head and hlen + len(m) > head_budget:
+            break
+        head.append(m)
+        hlen += len(m) + 2
+    tail, tlen = [], 0
+    for m in reversed(messages):
+        if tail and tlen + len(m) > (max_chars - head_budget):
+            break
+        tail.append(m)
+        tlen += len(m) + 2
+    tail.reverse()
+    return "\n\n".join(head) + "\n\n[... middle of session omitted ...]\n\n" + "\n\n".join(tail)
+
+
 _KIND_TO_TYPE_TAG = {"procedural": "type:procedural", "episodic": "type:episodic"}
 
 
@@ -525,7 +575,7 @@ def _emit_session_episode(
     messages = _turns_to_messages(turns)
     body = (
         "=== BEGIN CONVERSATION ===\n"
-        + "\n\n".join(messages)
+        + _head_tail_sample(messages)
         + "\n=== END CONVERSATION ===\n\n"
         "Summarize per the system instructions above."
     )
@@ -1384,21 +1434,28 @@ def run(session_id: str, transcript_path: str) -> None:
 
         # 6. Call Haiku
         messages = _turns_to_messages(turns)
-        try:
-            text_blob = "\n\n".join(messages)
-            # Append tool-trace digest to the extraction input so the miner can
-            # learn from file edits, commands run, and errors hit.  The digest is
-            # DATA inside _mine_one_chunk's existing do-not-follow envelope — no
-            # extra envelope needed here.  Episodes are narrative-only (kept as
-            # plain conversation text) so the digest is intentionally NOT appended
-            # to the episode-summary input in _emit_session_episode.
-            digest = _build_tool_digest(turns)
-            if digest:
-                text_blob = text_blob + "\n\n=== TOOL TRACE (digest) ===\n" + digest
-            memories = extract_from_text(text_blob)
-        except Exception as exc:
-            log.warning("mine_delta: Haiku extraction failed", session_id=session_id, error=str(exc))
-            memories = []
+        # Append tool-trace digest to the extraction input so the miner can
+        # learn from file edits, commands run, and errors hit.  The digest is
+        # DATA inside _mine_one_chunk's existing do-not-follow envelope — no
+        # extra envelope needed here.  Episodes are narrative-only (kept as
+        # plain conversation text) so the digest is intentionally NOT appended
+        # to the episode-summary input in _emit_session_episode.
+        digest = _build_tool_digest(turns)
+        # Split into token-bounded chunks so a large delta (e.g. a full-session
+        # re-mine, or a long uninterrupted session) never exceeds Haiku's
+        # ~200k-token context. ~4 chars/token; _MAX_EXTRACT_CHARS keeps each
+        # chunk well under the limit with room for the system prompt + output.
+        chunks = _chunk_messages(messages, _MAX_EXTRACT_CHARS)
+        memories = []
+        for ci, chunk in enumerate(chunks):
+            blob = "\n\n".join(chunk)
+            if ci == len(chunks) - 1 and digest:
+                blob = blob + "\n\n=== TOOL TRACE (digest) ===\n" + digest
+            try:
+                memories.extend(extract_from_text(blob))
+            except Exception as exc:
+                log.warning("mine_delta: Haiku extraction failed",
+                            session_id=session_id, chunk=ci, chunks=len(chunks), error=str(exc))
 
         # 6b. Extract dominant paths from raw turns and annotate candidates.
         # Counts every actual tool call occurrence (no dedup), so a file edited

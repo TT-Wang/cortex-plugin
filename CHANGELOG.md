@@ -10,6 +10,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > they have been left untouched as historical record. See the v0.7.0 entry
 > for the rename details, backward-compat strategy, and migration path.
 
+## v2.9.5 — Revert Episodic Anchor; Mining Token-Budget Chunking (2026-06-15)
+
+A correctness/honesty release. The v2.9.3 episodic *retrieval anchor* turned out to be a **net regression** and is reverted; the real episodic gains come from generation (v2.9.4) + plain three-way RRF on a cleaner corpus.
+
+### Reverted
+
+- **Episodic-intent retrieval anchor (`memem/retrieve.py`)** — removed. The anchor selected the query's "rarest vault term" and injected recency-ranked exact-entity matches at score 1.0. Two fatal flaws surfaced under measurement: (1) the rarity heuristic picked *common verbs* ("drove", "copying", "order.") as "entities" — the actually-distinctive entities (DeepSeek, EverMe) exceed the occurrence cap once they're discussed, so they're *excluded* — and (2) recency-ranking injected recent-but-irrelevant memories above relevant ones. With the anchor removed, every episodic benchmark query improved (the relevant memory rises on its own merits). v2.9.3's other fix (the merge-guard) is unaffected and retained.
+
+### Fixed
+
+- **Mining token-budget chunking (`memem/mine_delta.py`)** — `run()` joined an entire delta into one Haiku extraction call, and `_emit_session_episode()` joined the whole session into one summary call. A full-session re-mine (or a very long uninterrupted session) blew Haiku's ~200k-token context ("Prompt is too long · ~217k tokens"). Added `_chunk_messages()` (extraction splits into ≤350k-char chunks, results accumulated) and `_head_tail_sample()` (session summary keeps the start+end arc within budget). A single oversized turn is truncated, never dropped.
+
+### Data hygiene
+
+- **Purged 36 merge-stub artifacts** from the vault — memories whose body was a Haiku merge *refusal* ("I'd be happy to help merge, but I need you to provide…") stored as content by the pre-v2.9.3 merge bug. They polluted retrieval (e.g. outranking a real "EverMe-vs-memem architecture" memory). The v2.9.3 merge-guard prevents new ones; this clears the backlog.
+
+### Measured episodic result (memem vs EverMe, v3 LLM-judged, full-hit)
+
+- After v2.9.4 generation + this release's anchor-revert + stub-purge: memem **3/6** (was 2/6); EverMe 5/6.
+- On the **fair subset** (events mineable in both stores — excluding the two whose source transcripts no longer exist locally): **memem 3/4, EverMe 3/4 — parity**, each uniquely winning one query the other misses (memem: the tmux-crash session; EverMe: the release-list). The full-set gap is entirely the two corpus-unavailable events — the same "don't test unmined events" bias the v3 methodology was built to avoid.
+
 ## v2.9.4 — Per-Event Episodic Generation (2026-06-15)
 
 The retrieval anchor in v2.9.3 could only surface what the vault already held — and the vault held *one 100-word narrative per session* (titled by the session's first message), so "when did X happen" queries about a specific mid-session event had no clean record to find. This release fixes episodic **generation**: the concept miner now also emits **per-event** `type:episodic` memories for significant dated events, giving memem the per-event granularity that event-log stores get for free.

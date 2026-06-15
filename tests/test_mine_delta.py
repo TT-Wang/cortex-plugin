@@ -415,3 +415,22 @@ def test_turns_to_text_nonempty_on_real_schema(mine_env):
     assert len(text) > 20, f"Expected real text, got {len(text)} chars: {text!r}"
     assert "Hello" in text
     assert "Yes, I can help" in text
+
+
+def test_chunk_messages_respects_budget():
+    """Large deltas must split into token-bounded chunks so a full-session
+    re-mine never exceeds Haiku's context limit (regression: a 25k-line
+    re-mine sent ~217k tokens in one call and failed)."""
+    from memem import mine_delta as md
+
+    # Small input → single chunk
+    assert md._chunk_messages(["a", "b", "c"], 100) == [["a", "b", "c"]]
+    # Each turn near the budget → one chunk each
+    assert len(md._chunk_messages(["x" * 60, "y" * 60, "z" * 60], 100)) == 3
+    # A single turn larger than the whole budget is truncated, never dropped
+    out = md._chunk_messages(["q" * 500], 100)
+    assert len(out) == 1 and len(out[0][0]) == 100
+    # Every chunk stays within budget
+    big = ["m" * 40 for _ in range(50)]
+    for chunk in md._chunk_messages(big, 200):
+        assert sum(len(m) + 2 for m in chunk) <= 200 + 42  # last item may straddle by one turn
