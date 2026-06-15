@@ -310,3 +310,64 @@ supersession + key expansion is precisely the trio that LongMemEval-credible sys
 (Zep, Supermemory) win with, implemented here with zero new infrastructure —
 the `invalidate_memory` machinery, the `supersedes` extraction, and the FTS index
 all already exist; they're just not connected.
+
+---
+
+## 6. Phase G — v2.10 "Verbatim Episodic Floor" (mempalace-informed, BACKLOG)
+
+> Added 2026-06-15 after studying **mempalace** (github.com/mempalace/mempalace) and
+> the v3 episodic benchmark result (memem **3/6** full-hit vs EverMe 5/6; parity 3/4
+> on the mineable subset). v2.9.4 added per-event `type:episodic` *generation*; this
+> phase adds the *substrate* episodic recall needs. **Data-gated: POC + measure on the
+> v3 episodic benchmark before committing.** Core lesson from mempalace: distillation
+> loses exactly the per-turn/when/who/why granularity episodic queries need — don't
+> *discard* the raw substrate under the concept vault.
+
+### G1 — Read-time transcript/neighbor expansion (Tier 1, cheap, do first)
+- When an episodic-intent query matches a memory with `source_session`, pull the
+  **±N surrounding raw turns** from the transcript and surface them alongside the card
+  (mempalace `searcher.py:_expand_with_neighbors`). Pure read-time enrichment.
+- Reuses existing `transcript_search` + session resolution. **No storage change, no new
+  deps, NOT auto-injected** (token economy untouched).
+- **Validate:** re-run v3 episodic; if 3/6 → 4–5/6, may obviate G2.
+
+### G2 — Persisted verbatim "drawer" floor (Tier 2, the structural fix, POC-gated)
+- Miner also writes exchange-pair chunks (~800 char, verbatim — mempalace
+  `convo_miner.py:chunk_exchanges`) into a **separate** store indexed by memem's
+  **existing FTS5 + embeddings.npy** — **NOT ChromaDB** (rejected: disk-fill).
+- Properties that keep it value-compatible:
+  - **Retrieval floor, not injection** — surfaces only on episodic-intent recall /
+    on-demand; concept vault stays signal-pure.
+  - **Survives transcript pruning** — fixes the root cause of the unrecoverable
+    i=0 (DeepSeek) / i=1 (strudel) queries.
+  - **Bounded** (decay/scope old drawers) — the one place NOT to copy mempalace's
+    hoard-forever; keep storage finite.
+  - Episodic cards gain a `drawer_ids` pointer (mempalace closet→drawer split).
+- **POC on a slice; measure episodic gain AND token/disk cost before committing.**
+
+### G3 — Temporal + line locators (Tier 3, enrichment, after G2)
+- Stamp episodic cards with `content_date` + source span `date:Lstart-Lend`
+  (mempalace `miner.py:_extract_content_date`, their "Tier-6a").
+- Wire a **temporal-proximity boost into RRF** (not just `memory_timeline` sort).
+
+### G4 — Embedder-identity sidecar (small, pure robustness, orthogonal)
+- Persist `model_name`+`dimension` with the embedding index; fail-hard on mismatched
+  read (mempalace `backends/_sidecar.py`). Prevents silent recall collapse after an
+  embedding-model swap.
+
+### Skip (evidence-backed, conflicts with memem values)
+- **ChromaDB / Qdrant / pgvector backends** — memem's FTS5+npy already covers local.
+- **AAAK wire format** — concept cards already solve index compression.
+- **Wholesale verbatim hoard** — blows token economy; reintroduces mempalace's noise
+  weakness (MemBench distractor 43.4%, post-processing 56.6%).
+- **Speaker-scoped indexing** — their big LoCoMo win, but for multi-party chats; memem's
+  corpus is solo coding sessions. Don't build without data showing a who-said-what miss.
+- **Chasing their 100% headlines** — self-disclosed as overfit (3-question) / trivial
+  (top-k > session-count). Defensible refs: 96.6% raw R@5 / 98.4% held-out LongMemEval.
+
+| Item | Theme | Size | Risk | Gate |
+|------|-------|------|------|------|
+| G1 | Neighbor expansion | S | None (read-time) | POC → v3 episodic |
+| G2 | Verbatim drawer floor | M-L | Storage/token if unbounded | POC + cost measure |
+| G3 | Temporal locators + RRF boost | S-M | Low | after G2 |
+| G4 | Embedder-identity sidecar | S | None | — |
