@@ -261,3 +261,46 @@ def test_save_memory_triggers_embedding_upsert(tmp_vault, tmp_cortex_dir):
         f"memory id {mem_id[:8]}... not found in embedding_ids.json after _save_memory; "
         f"found: {[i[:8] for i in ids]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# B4d: _update_memory re-embeds (no cosine drift on UPDATE/SUPERSEDE/merge)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(
+    not __import__("importlib").util.find_spec("sentence_transformers"),
+    reason="sentence-transformers not installed",
+)
+def test_update_memory_refreshes_embedding(tmp_vault, tmp_cortex_dir):
+    """_update_memory must re-embed: merging new content must change the stored
+    vector, otherwise cosine retrieval drifts (the bug a manual rebuild fixed)."""
+    import importlib
+
+    from memem import models, obsidian_store, search_index
+    importlib.reload(models)
+    importlib.reload(search_index)
+    importlib.reload(obsidian_store)
+    import memem.embedding_index as ei
+    importlib.reload(ei)
+
+    mem = obsidian_store._make_memory(
+        content="alpha topic about widgets gears and mechanical assemblies",
+        title="Alpha mechanical", project="test",
+    )
+    obsidian_store._save_memory(mem)
+    mid = mem["id"]
+    ei._load_index()
+    row_before = ei._index_matrix[ei._index_ids.index(mid)].copy()
+
+    obsidian_store._update_memory(
+        mid,
+        new_content="completely different subject: oceanography tides salinity and marine currents",
+        new_title="Beta oceanography",
+    )
+    ei._load_index()
+    row_after = ei._index_matrix[ei._index_ids.index(mid)]
+
+    assert not np.allclose(row_before, row_after), (
+        "embedding did not refresh after _update_memory — cosine would drift on merges"
+    )

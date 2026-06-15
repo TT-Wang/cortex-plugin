@@ -10,6 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > they have been left untouched as historical record. See the v0.7.0 entry
 > for the rename details, backward-compat strategy, and migration path.
 
+## v2.9.2 — Embedding Freshness on Update (2026-06-15)
+
+### Fixed
+
+- **Re-embed on `_update_memory` (`memem/obsidian_store.py`)** — embeddings were refreshed only on `_save_memory`, so every reconciler `UPDATE`/`SUPERSEDE`/merge and dreamer rewrite changed a memory's *content* while leaving its *vector stale*. Over time this drifted the cosine channel and degraded retrieval (a manual full rebuild recovered ~+3pp on the keyword benchmark, 79.3% → 82.7%). `_update_memory` now calls `_upsert_embedding` with the same `title — essence` text composition as `_save_memory`, so merged/updated memories stay vector-fresh between full rebuilds. Covered by `tests/test_b4_b22_embedding_freshness.py::test_update_memory_refreshes_embedding`.
+
+### Added
+
+- **`tests/benchmark_recall.py`** — ground-truth recall@k benchmark (was committed in 21ee106): labels the correct memory id(s) per query and measures top-k recall, a relevance-based companion to the keyword-overlap `benchmark_18q.py`.
+- **`tests/benchmark_v2_run.py`** — fair memem-vs-EverMe comparison runner: LLM-judged graded relevance, shared-corpus queries, abstention/negative queries, multi-metric (precision/latency/token-cost).
+
 ## v2.9.1 — Path-Scope Activation (2026-06-14)
 
 Activates the path-scoped retrieval that shipped (dormant) in v2.9.0: recall now auto-derives `paths_context` from the current session, so the `paths:` bonus actually fires. No API or schema changes.

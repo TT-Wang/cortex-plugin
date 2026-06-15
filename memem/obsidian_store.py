@@ -1313,6 +1313,18 @@ def _update_memory(
     _append_or_update_index_line(mem)
     _log_event("update", memory_id)
     _index_memory(mem)
+    # Re-embed after a content merge/update so cosine retrieval doesn't drift on
+    # UPDATE/SUPERSEDE/merge ops (same text composition as _save_memory). Without
+    # this, merged memories kept STALE embeddings until the next full rebuild —
+    # the silent drift that a manual rebuild had to correct (+~3pp benchmark).
+    try:
+        from memem.embedding_index import _upsert_embedding  # noqa: PLC0415
+        _upsert_embedding(
+            mem.get("id", ""),
+            ((mem.get("title", "") or "") + " — " + (mem.get("essence", "") or "")).strip(),
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.debug("embedding upsert (update) failed for %s: %s", mem.get("id", "")[:8], exc)
     try:
         from memem.graph_index import _refresh_edges_for_memory
         refreshed_mem = _find_memory(mem.get("id", ""))
