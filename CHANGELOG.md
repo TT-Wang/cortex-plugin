@@ -10,6 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > they have been left untouched as historical record. See the v0.7.0 entry
 > for the rename details, backward-compat strategy, and migration path.
 
+## v2.9.4 — Per-Event Episodic Generation (2026-06-15)
+
+The retrieval anchor in v2.9.3 could only surface what the vault already held — and the vault held *one 100-word narrative per session* (titled by the session's first message), so "when did X happen" queries about a specific mid-session event had no clean record to find. This release fixes episodic **generation**: the concept miner now also emits **per-event** `type:episodic` memories for significant dated events, giving memem the per-event granularity that event-log stores get for free.
+
+### Added
+
+- **`kind:"episodic"` extraction (`memem/haiku_prompts.py`, `memem/mining.py`)** — the mining prompt now instructs Haiku to emit a separate memory for each *significant dated event* (a decision, a tool/approach switch, a bug diagnosed+fixed, a release shipped, a milestone) capturing WHEN + WHAT + WHY, titled by the event. Bounded by design (≤3 per session, significant events only — not a per-turn firehose). `_mine_one_chunk` passes `kind:"episodic"` through validation alongside `kind:"procedural"`; unrecognized kinds are still dropped.
+- **Kind→type-tag mapping for episodic (`memem/mine_delta.py`)** — new `_with_kind_tag()` helper maps `kind:"episodic"` → `type:episodic` (and `procedural` → `type:procedural`) across the ADD / UPDATE-SUPERSEDE / fallback save paths (replacing three duplicated inline blocks). The reconciler is now shown each candidate's `KIND:` and treats `type:episodic` candidates as distinct point-in-time records (always ADD; never PROFILE/UPDATE/SUPERSEDE/NOOP), so dated events are never collapsed into a concept memory or routed out of the retrieval corpus into a profile.
+
+### Notes
+
+- Validated end to end: feeding a conversation with a dated switch, a bug fix, and a release now yields three clean `type:episodic` records (event-titled, WHEN/WHAT/WHY) plus a correctly-separated `type:procedural` rule.
+- **Scope/honesty:** this upgrades episodic capture *going forward*. It does **not** retroactively win past benchmark queries whose source transcripts no longer exist on the machine (e.g. the Substrate DeepSeek-switch and Loom strudel-audio sessions) — a transcript-miner can only mine transcripts it can still read, whereas a live per-turn event store retains events whose transcripts were later pruned. To backfill episodic memories for events whose sessions *do* survive locally, run `python3 -m memem.server --mine-all` (Haiku cost).
+
 ## v2.9.3 — Episodic Retrieval Anchor + Merge-Guard (2026-06-15)
 
 Targets episodic recall ("when did X happen", "what happened in the session where…"). Two independent fixes — one retrieval, one generation — plus an honest episodic-fair benchmark. **Scope note:** this improves episodic *retrieval ordering* and fixes a generation *bug*; it does **not** close the structural gap with an event-log store (e.g. EverMe) on verbatim dated-event recall. That gap is generation-bound (the vault must contain the dated event before retrieval can surface it) and is the subject of follow-up work.

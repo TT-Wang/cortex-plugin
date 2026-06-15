@@ -222,11 +222,11 @@ def _mine_one_chunk(chunk_messages: list[str]) -> list[dict]:
         else:
             sanitized_keys = []
         entry["keys"] = sanitized_keys
-        # Pass through kind only when it is exactly 'procedural'; all other
-        # values (including misspellings) are dropped to keep the field a clean
-        # discriminator downstream.
-        if item.get("kind") == "procedural":
-            entry["kind"] = "procedural"
+        # Pass through kind only for the recognized discriminators
+        # ('procedural', 'episodic'); all other values (including misspellings)
+        # are dropped to keep the field clean downstream.
+        if item.get("kind") in ("procedural", "episodic"):
+            entry["kind"] = item["kind"]
         valid_items.append(entry)
 
     return valid_items

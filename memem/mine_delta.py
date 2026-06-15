@@ -64,6 +64,21 @@ _EPISODE_HAIKU_SYSTEM = (
 # -----------------------------------------------------------------------
 
 
+_KIND_TO_TYPE_TAG = {"procedural": "type:procedural", "episodic": "type:episodic"}
+
+
+def _with_kind_tag(kind: "str | None", tags: list) -> list:
+    """Prepend the type:* tag for a recognized candidate kind (procedural/episodic).
+
+    Keeps mined memories discoverable by the kind-aware recall paths
+    (render_working_rules for procedural; episodic grouping for episodic).
+    """
+    t = _KIND_TO_TYPE_TAG.get(kind or "")
+    if t and t not in tags:
+        return [t] + list(tags)
+    return tags
+
+
 def _state_dir() -> Path:
     """Return the base state directory, honouring MEMEM_DIR env var."""
     env = os.environ.get("MEMEM_DIR")
@@ -828,6 +843,10 @@ def _reconcile_candidates(
     for i, ((cand, _best, _score), neighbors) in enumerate(zip(surviving, candidate_neighbors)):
         content = cand.get("content") or cand.get("essence") or ""
         title = cand.get("title") or "Untitled"
+        # Surface kind so the reconciler can apply the type-aware rules
+        # (procedural rules accumulate; episodic dated events always ADD).
+        kind = cand.get("kind")
+        kind_line = f"KIND: type:{kind}\n" if kind in ("procedural", "episodic") else ""
         neighbor_lines = []
         for nb in neighbors:
             nb_id = (nb.get("id") or "")[:8]
@@ -837,6 +856,7 @@ def _reconcile_candidates(
         neighbors_str = "\n".join(neighbor_lines) if neighbor_lines else "  (none)"
         sections.append(
             f"=== CANDIDATE {i} ===\n"
+            f"{kind_line}"
             f"TITLE: {title}\n"
             f"CONTENT: {content[:500]}\n"
             f"NEIGHBORS:\n{neighbors_str}"
@@ -1136,9 +1156,8 @@ def _reconcile_candidates(
         # Execute op
         if op == "ADD":
             try:
-                # Prepend type:procedural tag when candidate has kind=='procedural'
-                if cand.get("kind") == "procedural" and "type:procedural" not in tags:
-                    tags = ["type:procedural"] + list(tags)
+                # Prepend the type:* tag for procedural/episodic candidates.
+                tags = _with_kind_tag(cand.get("kind"), tags)
                 mem = _make_memory(
                     content=content,
                     title=title,
@@ -1211,12 +1230,11 @@ def _reconcile_candidates(
 
         elif op == "SUPERSEDE" and target_full:
             try:
-                # Prepend type:procedural tag when candidate has kind=='procedural'
-                # (same convention as the ADD and fallback paths — a procedural
-                # rule that supersedes an older rule must stay discoverable by
+                # Prepend the type:* tag for procedural/episodic candidates (same
+                # convention as the ADD and fallback paths — a procedural rule that
+                # supersedes an older rule must stay discoverable by
                 # render_working_rules).
-                if cand.get("kind") == "procedural" and "type:procedural" not in tags:
-                    tags = ["type:procedural"] + list(tags)
+                tags = _with_kind_tag(cand.get("kind"), tags)
                 mem = _make_memory(
                     content=content,
                     title=title,
@@ -1279,9 +1297,8 @@ def _fallback_add_all(
             tags = mem_dict.get("tags") or mem_dict.get("domain_tags") or []
             project = mem_dict.get("project") or "general"
             importance = int(mem_dict.get("importance") or 3)
-            # Prepend type:procedural tag when candidate has kind=='procedural'
-            if mem_dict.get("kind") == "procedural" and "type:procedural" not in tags:
-                tags = ["type:procedural"] + list(tags)
+            # Prepend the type:* tag for procedural/episodic candidates.
+            tags = _with_kind_tag(mem_dict.get("kind"), tags)
             mem = _make_memory(
                 content=content,
                 title=title,

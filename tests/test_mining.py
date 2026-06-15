@@ -142,6 +142,32 @@ def test_mine_one_chunk_keys_over_8_capped(monkeypatch):
     assert len(results[0]["keys"]) == 8
 
 
+def test_mine_one_chunk_passes_episodic_kind(monkeypatch):
+    """kind='episodic' (dated events) must survive validation alongside 'procedural'.
+
+    Regression for the episodic-generation overhaul: the concept miner emits
+    kind='episodic' for significant dated events, which mine_delta maps to a
+    type:episodic tag so 'when did X happen' queries can find them.
+    """
+    import json
+
+    from memem import mining
+
+    haiku_output = json.dumps([
+        {"title": "Switched to DeepSeek API", "content": "On June 8 switched backend to DeepSeek for streaming + cost",
+         "project": "substrate", "importance": 4, "kind": "episodic"},
+        {"title": "Always await sample loads", "content": "When using Strudel, always await sample loads",
+         "project": "loom", "importance": 3, "kind": "procedural"},
+        {"title": "Some concept", "content": "A durable convention", "project": "general",
+         "importance": 3, "kind": "bogus"},
+    ])
+    monkeypatch.setattr(mining, "_run_haiku", lambda _prompt: haiku_output)
+    results = mining._mine_one_chunk(["conversation text"])
+    assert results[0].get("kind") == "episodic"
+    assert results[1].get("kind") == "procedural"
+    assert "kind" not in results[2]  # unrecognized kinds dropped
+
+
 def test_merge_memories_rejects_empty_input():
     """Empty side must raise (no subprocess) — never store a 'please provide entries' reply."""
     import pytest

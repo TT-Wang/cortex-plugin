@@ -33,7 +33,7 @@ def test_mine_one_chunk_passes_procedural_kind(monkeypatch):
             "project": "general",
             "content": "The project uses Python 3.12.",
             "importance": 3,
-            "kind": "episodic",  # not procedural — must be dropped
+            "kind": "episodic",  # v2.9.4: episodic is now a recognized kind — passes through
         },
         {
             "title": "Another fact",
@@ -64,9 +64,9 @@ def test_mine_one_chunk_passes_procedural_kind(monkeypatch):
     )
     assert results[0]["content"] == "Always confirm before overwriting files."
 
-    # Second: kind=='episodic' should be dropped (not procedural)
-    assert "kind" not in results[1], (
-        f"Non-procedural kind must be dropped, got {results[1].get('kind')!r}"
+    # Second: kind=='episodic' now passes through (v2.9.4 episodic-generation)
+    assert results[1].get("kind") == "episodic", (
+        f"Expected kind='episodic' to pass through, got {results[1].get('kind')!r}"
     )
 
     # Third: no kind field — should have no kind
