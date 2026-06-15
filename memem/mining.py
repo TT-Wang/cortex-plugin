@@ -264,9 +264,28 @@ def _summarize_session_haiku(messages: list[str]) -> list[dict]:
     return extract_from_text(text_blob)
 
 
+# Telltale fragments of a Haiku clarification/refusal reply (it echoes the merge
+# task back instead of producing content). Distinctive enough not to collide with
+# genuine merged memory text. Checked against the first 300 chars only.
+_MERGE_REFUSAL_MARKERS = (
+    "i don't see two",
+    "i don't see any",
+    "could you please share",
+    "please share the two",
+    "you'd like me to merge",
+    "two memory entries",
+    "provide the two",
+)
+
+
 def _merge_memories(existing_content: str, new_content: str) -> str:
     """One Haiku call to merge two memory entries into one. Returns merged string capped at 2000 chars."""
-    prompt = f"EXISTING:\n{existing_content}\n\nNEW:\n{new_content}"
+    # Guard: an empty side means there's nothing to merge — Haiku replies with a
+    # clarification ("I don't see two entries...") that must never become content.
+    a, b = (existing_content or "").strip(), (new_content or "").strip()
+    if not a or not b:
+        raise RuntimeError("merge requires two non-empty entries")
+    prompt = f"EXISTING:\n{a}\n\nNEW:\n{b}"
     try:
         result = subprocess.run(
             ["claude", "-p", "--model", "haiku", "--tools", "", "--system-prompt", _HAIKU_MERGE_SYSTEM],
@@ -287,5 +306,11 @@ def _merge_memories(existing_content: str, new_content: str) -> str:
     merged = result.stdout.strip()
     if not merged:
         raise RuntimeError("empty response from Haiku during merge")
+
+    # Guard: reject a refusal/clarification reply rather than storing it as content
+    # (this is the bug that produced the empty strudel merge-stub eeadd6c0).
+    head = merged[:300].lower()
+    if any(m in head for m in _MERGE_REFUSAL_MARKERS):
+        raise RuntimeError("Haiku returned a clarification, not merged content")
 
     return merged[:2000]

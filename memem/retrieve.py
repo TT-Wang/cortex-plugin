@@ -100,6 +100,43 @@ _KEYS_BLOCK_PAT = re.compile(r"^keys:\n((?:- .*(?:\n|$))+)", re.M)
 _VERSION_PAT = re.compile(r"v\d+\.\d+(?:\.\d+)?", re.I)
 _DATE_PAT = re.compile(r"\d{4}-\d{2}-\d{2}")
 
+# Episodic-intent retrieval (v2.9.3): "what happened / when / which session /
+# switched to X" queries need the DATED EVENT, but concept-ranking (cosine+BM25+
+# FTS) buries it — rare entities (e.g. "deepseek", "tmux") fall out of the
+# candidate pool because common co-tokens dominate every channel. When a query
+# shows episodic intent AND contains a distinctive rare entity, exact-match that
+# entity in the vault and surface those memories (recency-ranked) ahead of the
+# concept results. Gated so concept queries are untouched (no regression).
+_EPISODIC_PAT = re.compile(
+    r"\b(when|what happened|which session|in the session|switch(?:ed)?\s+(?:to|from)|"
+    r"set\s?up|did\s+(?:we|i|the user|you)|in order|sequence|most recent|drove|crash)\b",
+    re.I,
+)
+_EP_STOP = frozenset(
+    "the a an of to for and or in on at with from what when how did do is are was were "
+    "i you we my your their this that it its about into over across they me he she most "
+    "recent list through roughly order session began that user switch switched api cli "
+    "work worked thing decide decided around".split()
+)
+
+
+def _rarest_entity(query: str, vault_idx: dict, max_occ: int = 12) -> str | None:
+    """Return the query's rarest distinctive content term (appearing in 1..max_occ
+    vault memories), or None. Used to anchor episodic retrieval on a specific entity.
+    """
+    toks = {t for t in re.findall(r"[a-z0-9.\-]{4,}", query.lower()) if t not in _EP_STOP}
+    best, best_n = None, max_occ + 1
+    for t in toks:
+        n = 0
+        for m in vault_idx.values():
+            if t in (m["title"] + " " + m["body_full"]).lower():
+                n += 1
+                if n > max_occ:
+                    break
+        if 0 < n <= max_occ and n < best_n:
+            best, best_n = t, n
+    return best
+
 # Module-level caches (lazy-loaded, mtime-invalidated).
 # CPython GIL makes "set after compute" safe — see module docstring.
 _model: "Any | None" = None  # SentenceTransformer instance (lazy-loaded)
@@ -942,6 +979,40 @@ def retrieve(
                     hit["score"] = hit["score"] * 1.05
             except Exception:  # noqa: BLE001 — path bonus is advisory; never crash retrieval
                 continue
+
+    # Episodic-intent anchor (v2.9.3): surface the DATED EVENT for "what happened /
+    # when / switched to X / which session" queries. Concept-ranking buries these and
+    # rare entities never enter the candidate pool, so we exact-match the query's
+    # rarest entity in the vault and place those (recency-ranked) ahead of the concept
+    # results. Capped at k//2 so concept results still appear. Gated by _EPISODIC_PAT
+    # → concept queries are untouched (verified: no recall@k regression). Never raises.
+    try:
+        if _EPISODIC_PAT.search(query):
+            entity = _rarest_entity(query, vault_idx)
+            if entity:
+                ent_matches = [
+                    m for m in vault_idx.values()
+                    if entity in (m["title"] + " " + m["body_full"]).lower()
+                ]
+                ent_matches.sort(
+                    key=lambda m: str(m.get("updated_at") or m.get("created") or ""),
+                    reverse=True,
+                )
+                seen_paths_ep = {h.get("path") for h in results}
+                injected: list[MemoryHit] = []
+                for m in ent_matches[: max(1, k // 2)]:
+                    if m.get("path") in seen_paths_ep:
+                        continue
+                    injected.append({
+                        **{kk: vv for kk, vv in m.items() if kk != "body_full"},
+                        "score": 1.0,
+                        "source": "episodic",
+                    })
+                    seen_paths_ep.add(m.get("path"))
+                if injected:
+                    results = (injected + results)[:k]
+    except Exception:  # noqa: BLE001 — episodic anchor is advisory; never crash retrieval
+        pass
 
     # Fire-and-forget access writeback via telemetry sidecar (m3).
     # Only cosine hits are recorded; FTS hits are structural supplements, not

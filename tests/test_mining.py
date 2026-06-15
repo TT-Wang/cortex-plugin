@@ -140,3 +140,36 @@ def test_mine_one_chunk_keys_over_8_capped(monkeypatch):
     monkeypatch.setattr(mining, "_run_haiku", lambda _prompt: haiku_output)
     results = mining._mine_one_chunk(["conversation"])
     assert len(results[0]["keys"]) == 8
+
+
+def test_merge_memories_rejects_empty_input():
+    """Empty side must raise (no subprocess) — never store a 'please provide entries' reply."""
+    import pytest
+
+    from memem import mining
+    with pytest.raises(RuntimeError, match="non-empty"):
+        mining._merge_memories("", "some new content")
+    with pytest.raises(RuntimeError, match="non-empty"):
+        mining._merge_memories("existing content", "   ")
+
+
+def test_merge_memories_rejects_haiku_refusal(monkeypatch):
+    """A Haiku clarification reply (returncode 0) must raise, not be stored as content.
+
+    Regression for the empty strudel merge-stub eeadd6c0, whose body was
+    'I don't see two specific memory entries...'.
+    """
+    import subprocess
+
+    import pytest
+
+    from memem import mining
+
+    refusal = ("I don't see two specific memory entries provided in your message. "
+               "Could you please share the two memory entries you'd like me to merge?")
+    monkeypatch.setattr(
+        subprocess, "run",
+        lambda *a, **k: subprocess.CompletedProcess(a, 0, stdout=refusal, stderr=""),
+    )
+    with pytest.raises(RuntimeError, match="clarification"):
+        mining._merge_memories("real existing essence", "real new content")

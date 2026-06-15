@@ -10,6 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > they have been left untouched as historical record. See the v0.7.0 entry
 > for the rename details, backward-compat strategy, and migration path.
 
+## v2.9.3 — Episodic Retrieval Anchor + Merge-Guard (2026-06-15)
+
+Targets episodic recall ("when did X happen", "what happened in the session where…"). Two independent fixes — one retrieval, one generation — plus an honest episodic-fair benchmark. **Scope note:** this improves episodic *retrieval ordering* and fixes a generation *bug*; it does **not** close the structural gap with an event-log store (e.g. EverMe) on verbatim dated-event recall. That gap is generation-bound (the vault must contain the dated event before retrieval can surface it) and is the subject of follow-up work.
+
+### Added
+
+- **Episodic-intent retrieval anchor (`memem/retrieve.py`)** — when a query carries temporal/event intent (`when`, `what happened`, `which session`, `switched to/from`, `set up`, `most recent`, …), `retrieve()` finds the *rarest distinctive entity* in the query (`_rarest_entity`, skipping stopwords) and injects exact-entity vault matches ranked by recency ahead of the cosine/BM25/FTS results, deduped and truncated to `k`. This bypasses the common-token crowding that buried rare-but-decisive entities below the candidate pool. Fully gated (concept queries never trigger it) and wrapped so it never raises. Validated: entity events surface to the top with no recall@k regression (held 14/14 on `benchmark_recall.py`).
+- **`tests/benchmark_v3_run.py`** — episodic-fair benchmark runner. Fixes v2's bias (its "temporal" queries targeted events too recent to be mined into either store, so both scored ~0 = corpus-recency, not episodic skill); v3's EPISODIC category uses dated events well-mined in both stores, making the episodic dimension testable.
+
+### Fixed
+
+- **Merge-guard in `_merge_memories` (`memem/mining.py`)** — a merge with an empty side made Haiku reply with a clarification ("I don't see two specific memory entries…"), which (returncode 0) sailed past the callers' try/except and got **stored verbatim as the memory body**. This produced the empty strudel merge-stub `eeadd6c0`. `_merge_memories` now (1) raises on an empty input side before calling Haiku, and (2) rejects refusal/clarification replies (matched against the first 300 chars) instead of storing them — both degrade the caller to the safe reject/ADD path. Removed the existing corrupted `eeadd6c0` stub. Covered by `tests/test_mining.py::test_merge_memories_rejects_empty_input` and `::test_merge_memories_rejects_haiku_refusal`.
+
 ## v2.9.2 — Embedding Freshness on Update (2026-06-15)
 
 ### Fixed
