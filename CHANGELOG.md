@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > they have been left untouched as historical record. See the v0.7.0 entry
 > for the rename details, backward-compat strategy, and migration path.
 
+## v2.9.6 — Lenient Frontmatter Recovery + One-Time Repair (2026-07-03)
+
+Fixes the "Failed to parse frontmatter" warning flood on vaults containing legacy memory files (written by pre-v1.9.3 cortex/memem), surfaced by sliceagent embedding memem as its memory backend.
+
+### Fixed
+
+- **Legacy-frontmatter warning flood (`memem/obsidian_store.py`)** — a memory file whose YAML frontmatter the strict parser rejects (unquoted colons, values spilled onto bare continuation lines, a never-closed `---` block) used to log a warning **every session, forever**, and was served with its metadata dumped into the body. Now the reader recovers such files with a line-tolerant fallback parser (`key: value` / `- item` lines parsed one at a time, so one corrupt line loses only itself), then **rewrites the file once through the current sanitized writer** — the next read passes the strict parser and the log stays silent. Recovery that yields no `id`/`title` falls through to the existing `MEMEM_FRONTMATTER_STRICT` dispatch (quarantine by default). A read-only vault still serves the recovered memory and simply skips the rewrite.
+
 ## v2.9.5 — Revert Episodic Anchor; Mining Token-Budget Chunking (2026-06-15)
 
 A correctness/honesty release. The v2.9.3 episodic *retrieval anchor* turned out to be a **net regression** and is reverted; the real episodic gains come from generation (v2.9.4) + plain three-way RRF on a cleaner corpus.

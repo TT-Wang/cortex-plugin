@@ -616,6 +616,100 @@ def _write_obsidian_memory(mem: dict):
     mem["obsidian_file"] = filename
 
 
+_LENIENT_KV_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*):(?:\s(.*))?$")
+_LENIENT_ITEM_RE = re.compile(r"^\s*-\s+(.*)$")
+_LENIENT_END_RE = re.compile(r"^-{3,}\s*$")
+# Frontmatter keys whose values are lists — an empty recovered value stays a
+# list for these and collapses to "" for scalar keys (valid_to: etc.).
+_LENIENT_LIST_KEYS = frozenset({"tags", "related", "keys", "references", "contradicts", "paths"})
+
+
+def _lenient_scalar(raw: str) -> Any:
+    """Best-effort parse of a single frontmatter value; never raises."""
+    try:
+        val = _yaml.safe_load(raw)
+    except Exception:  # noqa: BLE001 — any YAML failure falls back to raw text
+        val = None
+    if isinstance(val, (str, int, float, bool, list)):
+        return val
+    if val is None and raw.strip("'\"").strip() == "":
+        return ""
+    # Unparseable or exotic value (unquoted colon parses to a dict, bare dates
+    # to date objects, ...): keep the raw text — downstream str()s everything.
+    return raw.strip().strip("'\"")
+
+
+def _lenient_frontmatter_parse(content: str) -> tuple[dict[str, Any], str]:
+    """Line-tolerant frontmatter fallback for files strict YAML rejects.
+
+    Legacy writers (pre-v1.9.3 cortex/memem) could emit frontmatter PyYAML
+    refuses wholesale: unquoted colons, newline-split flow lists, a missing
+    closing delimiter. This parses `key: value` / `key:` + `- item` lines ONE
+    AT A TIME and skips any line it cannot understand, so a single corrupt
+    line loses only itself instead of failing the whole block.
+    Returns (metadata, body).
+    """
+    _ensure_frontmatter()
+    lines = content.lstrip().splitlines()
+    # lines[0] is the opening '---'; find the closing delimiter.
+    end = next((i for i in range(1, len(lines)) if _LENIENT_END_RE.match(lines[i])), None)
+    if end is None:
+        # No closing delimiter (legacy truncation): meta = the leading run of
+        # recognizable lines, body = everything from the first prose line on.
+        end = len(lines)
+        for i in range(1, len(lines)):
+            ln = lines[i]
+            if not ln.strip() or _LENIENT_KV_RE.match(ln) or _LENIENT_ITEM_RE.match(ln):
+                continue
+            end = i
+            break
+        body_lines = lines[end:]
+    else:
+        body_lines = lines[end + 1:]
+
+    meta: dict[str, Any] = {}
+    list_key: str | None = None
+    for ln in lines[1:end]:
+        if not ln.strip():
+            continue
+        kv = _LENIENT_KV_RE.match(ln)
+        if kv:
+            key, raw = kv.group(1), (kv.group(2) or "").strip()
+            if raw == "":
+                meta[key] = []  # block-list opener (or empty scalar; fixed up below)
+                list_key = key
+            else:
+                meta[key] = _lenient_scalar(raw)
+                list_key = None
+            continue
+        item = _LENIENT_ITEM_RE.match(ln)
+        if item and list_key is not None:
+            value = item.group(1).strip().strip("'\"")
+            if value and isinstance(meta.get(list_key), list):
+                meta[list_key].append(value)
+            continue
+        # Anything else is a corrupt spill line — skipping it IS the tolerance.
+    for key, val in meta.items():
+        if val == [] and key not in _LENIENT_LIST_KEYS:
+            meta[key] = ""  # empty scalar, not an empty list
+    return meta, "\n".join(body_lines).strip()
+
+
+def _repair_recovered_memory(mem: dict, md_file: Path) -> None:
+    """One-time rewrite of a leniently-recovered file via the sanitized writer.
+
+    Turns the every-session parse warning into a single repair: the next read
+    goes through the strict parser cleanly. Best-effort — a read-only vault
+    just keeps serving the recovered memory without the rewrite.
+    """
+    try:
+        mem["obsidian_file"] = md_file.name  # lets the writer replace/rename the old file
+        _write_obsidian_memory(mem)
+        log.info("Repaired legacy memory file: %s", md_file.name)
+    except Exception as exc:  # noqa: BLE001 — read-only vault etc.; recovery still served
+        log.debug("Repair skipped for %s: %s", md_file.name, exc)
+
+
 def _parse_obsidian_memory_file(md_file: Path) -> dict | None:
     _ensure_frontmatter()
     try:
@@ -659,11 +753,35 @@ def _parse_obsidian_memory_file(md_file: Path) -> dict | None:
 
     # Use python-frontmatter to parse the file. Falls back gracefully if the
     # file has no frontmatter (post.metadata will be empty, post.content = full text).
+    needs_repair = False
     try:
         post = _fm.loads(content, handler=_MEM_HANDLER)
+        if not post.metadata and not any(
+            _LENIENT_END_RE.match(ln) for ln in content.lstrip().splitlines()[1:]
+        ):
+            # Opening '---' but NO closing fence: python-frontmatter silently
+            # treats the whole file as body (garbage title/body). Route this
+            # legacy-truncation shape through the same recovery as YAML errors.
+            raise ValueError("frontmatter block never closed")
     except Exception as exc:  # noqa: BLE001 — malformed YAML should not crash the reader
-        log.warning("Failed to parse frontmatter in %s: %s", md_file, exc)
-        post = _fm.Post(content)
+        # v2.9.6: frontmatter strict YAML rejects (legacy pre-v1.9.3 writers) →
+        # recover line-by-line, then rewrite via the sanitized writer so this
+        # fires ONCE per file, not as a warning flood every session.
+        lenient_meta, lenient_body = _lenient_frontmatter_parse(content)
+        if lenient_meta.get("id") or lenient_meta.get("title"):
+            log.info(
+                "Recovered malformed frontmatter in %s (%s); rewriting in current format",
+                md_file.name, type(exc).__name__,
+            )
+            post = _fm.Post(
+                lenient_body,
+                **{k: v for k, v in lenient_meta.items() if k not in ("content", "handler")},
+            )
+            needs_repair = True
+        else:
+            # Nothing recoverable — this is what quarantine is for.
+            _handle_malformed_frontmatter(md_file, reason=f"unparseable_frontmatter: {exc}")
+            return None
 
     fm_meta = post.metadata
     body = post.content.strip()
@@ -774,6 +892,9 @@ def _parse_obsidian_memory_file(md_file: Path) -> dict | None:
         mem["source_type"] = "mined"
     elif not mem.get("source_type"):
         mem["source_type"] = "user"
+
+    if needs_repair:
+        _repair_recovered_memory(mem, md_file)
 
     return mem
 

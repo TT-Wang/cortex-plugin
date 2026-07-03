@@ -340,3 +340,197 @@ class TestIdempotentReSerialization:
         assert second_parse["domain_tags"] == first_parse["domain_tags"]
         assert second_parse["importance"] == first_parse["importance"]
         assert second_parse["layer"] == first_parse["layer"]
+
+
+# ---------------------------------------------------------------------------
+# 5. Lenient recovery + one-time repair (v2.9.6) — legacy files whose YAML the
+#    strict parser rejects must be recovered line-by-line, rewritten once via
+#    the sanitized writer, and never warn again.
+# ---------------------------------------------------------------------------
+
+import contextlib as _contextlib
+
+
+@_contextlib.contextmanager
+def _redirected_store(tmp_dir: Path):
+    import memem.obsidian_store as _os
+    from memem import models as _m
+
+    original = _m.OBSIDIAN_MEMORIES_DIR
+    _m.OBSIDIAN_MEMORIES_DIR = tmp_dir
+    _os.OBSIDIAN_MEMORIES_DIR = tmp_dir
+    try:
+        yield
+    finally:
+        _m.OBSIDIAN_MEMORIES_DIR = original
+        _os.OBSIDIAN_MEMORIES_DIR = original
+
+
+def _strict_parses(path: Path) -> bool:
+    """True iff the file now passes the STRICT frontmatter parser."""
+    import frontmatter as fm
+
+    import memem.obsidian_store as _os
+
+    try:
+        fm.loads(path.read_text(), handler=_os._MEM_HANDLER)
+        return True
+    except Exception:
+        return False
+
+
+class TestLenientRecovery:
+    def test_bare_spilled_line_recovered_and_repaired(self, tmp_path):
+        """The in-the-wild shape: a value spilled onto its own bare line (no colon,
+        column 1) — PyYAML: 'while scanning a simple key … could not find expected
+        ":"'. Recovery must lose only the spilled line."""
+        bad = (
+            "---\n"
+            "id: aaaabbbb-1111-2222-3333-444455556666\n"
+            "title: Broken list memory\n"
+            "project: vibecoder\n"
+            "tags:\n- mined\n- vibecoder\n"
+            "summary: first part of the value\n"
+            "second bare spilled line without a colon\n"
+            "created: '2026-04-10'\n"
+            "importance: 3\n"
+            "status: active\n"
+            "---\n\nThe body content survives recovery.\n"
+        )
+        f = tmp_path / "broken-list-aaaabbbb.md"
+        f.write_text(bad)
+        assert not _strict_parses(f)
+
+        with _redirected_store(tmp_path):
+            mem = _parse_obsidian_memory_file(f)
+
+        assert mem is not None
+        assert mem["id"] == "aaaabbbb-1111-2222-3333-444455556666"
+        assert mem["title"] == "Broken list memory"
+        assert mem["project"] == "vibecoder"
+        assert set(mem["domain_tags"]) >= {"mined", "vibecoder"}
+        assert "body content survives" in mem["essence"]
+        # repaired: the (possibly renamed) file now parses strictly
+        repaired = list(tmp_path.glob("*-aaaabbbb.md"))
+        assert repaired, "repaired file missing"
+        assert _strict_parses(repaired[0])
+
+    def test_unquoted_colon_title_recovered(self, tmp_path):
+        bad = (
+            "---\n"
+            "id: ccccdddd-1111-2222-3333-444455556666\n"
+            "title: Fix: the unquoted colon\n"
+            "project: general\n"
+            "created: '2026-04-10'\n"
+            "---\n\nBody here.\n"
+        )
+        f = tmp_path / "colon-title-ccccdddd.md"
+        f.write_text(bad)
+        assert not _strict_parses(f)
+
+        with _redirected_store(tmp_path):
+            mem = _parse_obsidian_memory_file(f)
+
+        assert mem is not None
+        assert mem["title"] == "Fix: the unquoted colon"
+        assert mem["essence"] == "Body here."
+
+    def test_missing_closing_delimiter_recovered(self, tmp_path):
+        bad = (
+            "---\n"
+            "id: eeeeffff-1111-2222-3333-444455556666\n"
+            "title: No closing fence\n"
+            "project: general\n"
+            "Body starts right here without a closing fence.\n"
+            "And a second body line.\n"
+        )
+        f = tmp_path / "no-fence-eeeeffff.md"
+        f.write_text(bad)
+
+        with _redirected_store(tmp_path):
+            mem = _parse_obsidian_memory_file(f)
+
+        assert mem is not None
+        assert mem["title"] == "No closing fence"
+        assert "Body starts right here" in mem["essence"]
+        assert "second body line" in mem["essence"]
+
+    def test_unrecoverable_garbage_skipped(self, tmp_path, monkeypatch):
+        """No id/title recoverable → strict-mode dispatch (skip keeps the file)."""
+        monkeypatch.setenv("MEMEM_FRONTMATTER_STRICT", "skip")
+        f = tmp_path / "garbage-00000000.md"
+        f.write_text("---\n{{{ %% not yaml at all\nstill not yaml\n---\nbody\n")
+
+        with _redirected_store(tmp_path):
+            mem = _parse_obsidian_memory_file(f)
+
+        assert mem is None
+        assert f.exists()  # skip mode leaves the file in place
+
+    def test_unrecoverable_garbage_quarantined(self, tmp_path, monkeypatch):
+        from memem import models as _m
+
+        monkeypatch.delenv("MEMEM_FRONTMATTER_STRICT", raising=False)  # default = quarantine
+        monkeypatch.setattr(_m, "MEMEM_DIR", tmp_path / ".memem")
+        f = tmp_path / "garbage-11111111.md"
+        f.write_text("---\n{{{ %% not yaml at all\n---\nbody\n")
+
+        with _redirected_store(tmp_path):
+            mem = _parse_obsidian_memory_file(f)
+
+        assert mem is None
+        assert not f.exists()
+        assert list((tmp_path / ".memem" / "quarantine").glob("*garbage-11111111.md"))
+
+    def test_readonly_repair_failure_still_serves_memory(self, tmp_path, monkeypatch):
+        """A failing rewrite (read-only vault) must not lose the recovered memory."""
+        import memem.obsidian_store as _os
+
+        def _boom(mem):
+            raise OSError("read-only vault")
+
+        monkeypatch.setattr(_os, "_write_obsidian_memory", _boom)
+        bad = (
+            "---\n"
+            "id: 99998888-1111-2222-3333-444455556666\n"
+            "title: Readonly recovery\n"
+            "summary: broken value\nbare spilled line\n"
+            "---\n\nStill served.\n"
+        )
+        f = tmp_path / "readonly-99998888.md"
+        f.write_text(bad)
+
+        with _redirected_store(tmp_path):
+            mem = _parse_obsidian_memory_file(f)
+
+        assert mem is not None
+        assert mem["title"] == "Readonly recovery"
+        assert mem["essence"] == "Still served."
+        assert not _strict_parses(f)  # rewrite really was blocked
+
+    def test_repair_is_one_time(self, tmp_path, caplog):
+        """Second parse goes through the strict path — no recovery log, stable fields."""
+        import logging as _logging
+
+        bad = (
+            "---\n"
+            "id: 12123434-1111-2222-3333-444455556666\n"
+            "title: One time repair\n"
+            "tags:\n- mined\n"
+            "summary: value\nbare spill\n"
+            "---\n\nRepair me once.\n"
+        )
+        f = tmp_path / "once-12123434.md"
+        f.write_text(bad)
+
+        with _redirected_store(tmp_path):
+            first = _parse_obsidian_memory_file(f)
+            repaired = list(tmp_path.glob("*-12123434.md"))[0]
+            with caplog.at_level(_logging.DEBUG, logger="memem.obsidian_store"):
+                second = _parse_obsidian_memory_file(repaired)
+
+        assert first is not None and second is not None
+        assert second["id"] == first["id"]
+        assert second["title"] == first["title"]
+        assert second["essence"] == first["essence"]
+        assert not any("Recovered malformed" in r.message for r in caplog.records)
