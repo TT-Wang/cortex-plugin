@@ -5,12 +5,12 @@ without rewriting memory files on every read. Event log is an
 append-only audit trail of all memory operations.
 """
 
-import fcntl
 import json
 import logging
 import os
 from datetime import UTC, datetime, timedelta
 
+from memem import _locks
 from memem.models import EVENT_LOG, MEMEM_DIR, TELEMETRY_FILE, now_iso
 
 log = logging.getLogger("memem-telemetry")
@@ -48,7 +48,7 @@ def _record_access(memory_id: str) -> None:
     lock_path = TELEMETRY_FILE.with_suffix(".lock")
     fd = open(lock_path, "w")
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        _locks.lock_ex(fd)
         data = {}
         if TELEMETRY_FILE.exists():
             try:
@@ -75,7 +75,7 @@ def _record_access(memory_id: str) -> None:
             os.fsync(out.fileno())
         os.replace(tmp_path, TELEMETRY_FILE)
     finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
+        _locks.unlock(fd)
         fd.close()
 
 
@@ -133,7 +133,7 @@ def record_session_recall(session_id: str, memory_id: str) -> None:
     lock_path = _SESSION_RECALLS_FILE.with_suffix(".lock")
     fd = open(lock_path, "w")
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        _locks.lock_ex(fd)
         data: dict = {}
         if _SESSION_RECALLS_FILE.exists():
             try:
@@ -159,7 +159,7 @@ def record_session_recall(session_id: str, memory_id: str) -> None:
             os.fsync(out.fileno())
         os.replace(tmp_path, _SESSION_RECALLS_FILE)
     finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
+        _locks.unlock(fd)
         fd.close()
 
 
@@ -182,13 +182,13 @@ def get_session_recalls(session_id: str) -> list[str]:
         except (json.JSONDecodeError, OSError):
             return []
     try:
-        fcntl.flock(fd, fcntl.LOCK_SH)
+        _locks.lock_sh(fd)
         data = json.loads(_SESSION_RECALLS_FILE.read_text())
         return _entry_recalls(data.get(session_id[:12]))
     except (json.JSONDecodeError, OSError):
         return []
     finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
+        _locks.unlock(fd)
         fd.close()
 
 

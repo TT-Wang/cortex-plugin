@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > they have been left untouched as historical record. See the v0.7.0 entry
 > for the rename details, backward-compat strategy, and migration path.
 
+## v2.9.7 — Windows-importable core (fcntl shim) (2026-07-03)
+
+### Fixed
+
+- **`memem/_locks.py`** — cross-process flock shim: real `fcntl` locks on POSIX (byte-identical behavior), no-op on Windows where `fcntl` doesn't exist. `obsidian_store.py` and `telemetry.py` route through it, so the module chain a host app imports (retrieve/operations/obsidian_store) now loads on native Windows (sliceagent's Windows support needs this). Plugin-side modules (feedback/dreamer/cli) are unchanged — they run under Unix Claude Code hosts.
+
 ## v2.9.6 — Lenient Frontmatter Recovery + One-Time Repair (2026-07-03)
 
 Fixes the "Failed to parse frontmatter" warning flood on vaults containing legacy memory files (written by pre-v1.9.3 cortex/memem), surfaced by sliceagent embedding memem as its memory backend.

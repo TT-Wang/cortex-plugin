@@ -9,12 +9,10 @@ This module owns all interactions with the Obsidian vault:
 """
 
 import datetime as _dt
-import fcntl
 import functools
 import logging
 import os
 import re
-
 import threading
 import time
 import uuid
@@ -24,7 +22,7 @@ from typing import Any
 
 import msgpack
 
-
+from memem import _locks
 from memem.io_utils import atomic_write_text
 from memem.models import (
     DEFAULT_LAYER,
@@ -1358,13 +1356,13 @@ def _acquire_vault_write_lock():
     """
     MEMEM_DIR.mkdir(parents=True, exist_ok=True)
     fd = open(MEMEM_DIR / ".vault-write.lock", "w")  # noqa: SIM115
-    fcntl.flock(fd, fcntl.LOCK_EX)
+    _locks.lock_ex(fd)
     return fd
 
 
 def _release_vault_write_lock(fd) -> None:
     try:
-        fcntl.flock(fd, fcntl.LOCK_UN)
+        _locks.unlock(fd)
     except OSError:
         pass
     fd.close()
@@ -1684,10 +1682,10 @@ def _with_index_lock(func):
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         fd = open(lock_path, "w")
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX)
+            _locks.lock_ex(fd)
             return func(*args, **kwargs)
         finally:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            _locks.unlock(fd)
             fd.close()
     return wrapper
 
