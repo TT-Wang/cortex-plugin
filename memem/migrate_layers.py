@@ -32,6 +32,7 @@ import structlog
 from memem.haiku_prompts import HAIKU_TIMEOUT_SECONDS
 from memem.mining import _extract_json_string, _repair_json
 from memem.profiles import PROFILE_SCHEMAS, append_fact
+from memem import _proc
 
 log = structlog.get_logger("memem-migrate-layers")
 
@@ -166,19 +167,19 @@ def _call_haiku_batch(batch: list[dict], project: str) -> list[dict[str, Any]]:
 
     try:
         result = subprocess.run(
-            [
-                "claude",
-                "-p",
+            _proc.claude_argv(["-p",
                 "--model",
                 "haiku",
                 "--tools",
                 "",
                 "--system-prompt",
                 _MIGRATE_SYSTEM,
-            ],
+            ]),
             input=prompt,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=HAIKU_TIMEOUT_SECONDS,
             env={**os.environ, "MEMEM_HOOK_DISABLE": "1"},
             start_new_session=True,

@@ -66,7 +66,8 @@ def test_bootstrap_writes_capabilities(tmp_path):
 
 
 @pytest.mark.skipif(
-    os.geteuid() == 0,
+    # os.geteuid is POSIX-only; on Windows there is no root to skip for.
+    hasattr(os, "geteuid") and os.geteuid() == 0,
     reason="POSIX file permissions don't restrict root — the canary write "
     "succeeds even on a 0555 dir, so this test cannot meaningfully run as root. "
     "It still runs in normal user CI (GitHub Actions) where this assertion holds.",
