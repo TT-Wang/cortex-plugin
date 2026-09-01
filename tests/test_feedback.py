@@ -1,6 +1,5 @@
 """Tests for closed-loop relevance scoring (memem/feedback.py + integration)."""
 
-import fcntl
 import importlib
 import json
 
@@ -164,7 +163,7 @@ def test_ranking_includes_feedback(tmp_path, monkeypatch):
 
 
 def test_save_relevance_scores_uses_flock(tmp_path, monkeypatch):
-    """_save_relevance_scores must use fcntl.flock for concurrency safety."""
+    """_save_relevance_scores must take a lock for concurrency safety."""
     import memem.feedback as fb
     import inspect
 
@@ -174,7 +173,9 @@ def test_save_relevance_scores_uses_flock(tmp_path, monkeypatch):
 
     # Verify flock is used by checking the source — it's in the file
     source = inspect.getsource(fb._save_relevance_scores)
-    assert "flock" in source, "_save_relevance_scores must call flock for concurrency safety"
+    # Locking goes through memem._locks so the module stays importable on
+    # Windows, where fcntl does not exist.
+    assert "_locks.lock_ex" in source, "_save_relevance_scores must take a lock for concurrency safety"
 
 
 def test_two_sequential_saves_preserve_both(tmp_path, monkeypatch):

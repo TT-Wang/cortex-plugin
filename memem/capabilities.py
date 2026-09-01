@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any
 
 from memem.models import MEMEM_DIR, OBSIDIAN_MEMORIES_DIR, now_iso
+from memem import _proc
 
 log = logging.getLogger("memem-capabilities")
 
@@ -68,7 +69,7 @@ def _claude_cli_available() -> bool:
     # Extra sanity: make sure it actually runs (some installs are stale symlinks).
     try:
         result = subprocess.run(
-            ["claude", "--version"],
+            _proc.claude_argv(["--version"]),
             capture_output=True, text=True, timeout=3,
         )
         return result.returncode == 0

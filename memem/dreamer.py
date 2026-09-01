@@ -56,6 +56,8 @@ from pathlib import Path
 from memem.haiku_prompts import HAIKU_TIMEOUT_SECONDS
 from memem.io_utils import atomic_write_text
 from memem.models import DEFAULT_LAYER, LAYER_L0, MEMEM_DIR, now_iso
+from memem import _proc
+from memem import _locks
 
 log = logging.getLogger("memem-dreamer")
 
@@ -430,7 +432,7 @@ def find_cluster_summaries(memories: list[dict]) -> list[dict]:
 
             try:
                 result = subprocess.run(
-                    ["claude", "-p", "--model", _HAIKU_MODEL_ALIAS, "--tools", ""],
+                    _proc.claude_argv(["-p", "--model", _HAIKU_MODEL_ALIAS, "--tools", ""]),
                     input=prompt,
                     capture_output=True, text=True, timeout=60,
                     start_new_session=True,  # signal isolation; matches contradiction subprocess
@@ -517,14 +519,15 @@ def _call_haiku_cluster_merge(cluster_memories: list[dict]) -> dict | None:
 
     try:
         result = subprocess.run(
-            [
-                "claude", "-p", "--model", _HAIKU_MODEL_ALIAS,
+            _proc.claude_argv(["-p", "--model", _HAIKU_MODEL_ALIAS,
                 "--tools", "",
                 "--system-prompt", _CLUSTER_MERGE_SYSTEM,
-            ],
+            ]),
             input=prompt,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=HAIKU_TIMEOUT_SECONDS,
             env={**os.environ, "MEMEM_HOOK_DISABLE": "1"},
             start_new_session=True,
@@ -814,14 +817,15 @@ def find_reflection_insights(memories: list[dict]) -> list[dict]:
 
     try:
         result = subprocess.run(
-            [
-                "claude", "-p", "--model", _HAIKU_MODEL_ALIAS,
+            _proc.claude_argv(["-p", "--model", _HAIKU_MODEL_ALIAS,
                 "--tools", "",
                 "--system-prompt", _REFLECTION_SYSTEM,
-            ],
+            ]),
             input=prompt,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=HAIKU_TIMEOUT_SECONDS,
             env={**os.environ, "MEMEM_HOOK_DISABLE": "1"},
             start_new_session=True,
@@ -972,14 +976,15 @@ def find_tense_rewrites(memories: list[dict]) -> list[dict]:
 
     try:
         result = subprocess.run(
-            [
-                "claude", "-p", "--model", _HAIKU_MODEL_ALIAS,
+            _proc.claude_argv(["-p", "--model", _HAIKU_MODEL_ALIAS,
                 "--tools", "",
                 "--system-prompt", _TENSE_REWRITE_SYSTEM,
-            ],
+            ]),
             input=prompt,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=HAIKU_TIMEOUT_SECONDS,
             env={**os.environ, "MEMEM_HOOK_DISABLE": "1"},
             start_new_session=True,
@@ -1093,7 +1098,7 @@ def _judge_contradiction_with_sonnet(pair: dict) -> dict | None:
     )
     try:
         result = subprocess.run(
-            ["claude", "-p", "--model", _HAIKU_MODEL_ALIAS, "--tools", ""],
+            _proc.claude_argv(["-p", "--model", _HAIKU_MODEL_ALIAS, "--tools", ""]),
             input=prompt,
             capture_output=True, text=True, timeout=60,
             start_new_session=True,
@@ -1397,14 +1402,13 @@ def run_dream_cycle(dry_run: bool = True, safe_auto: bool = False) -> dict:
     Returns: {'diff_path': str, 'diff': dict, 'apply_result': dict | None,
               'dry_run': bool, 'safe_auto': bool} or {'skipped': 'lock-held'}.
     """
-    import fcntl  # noqa: PLC0415 — POSIX-only, matches codebase convention
 
     from memem.obsidian_store import _obsidian_memories
 
     MEMEM_DIR.mkdir(parents=True, exist_ok=True)
     _lock_fh = open(MEMEM_DIR / ".dream.lock", "w")  # noqa: SIM115
     try:
-        fcntl.flock(_lock_fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _locks.lock_ex_nb(_lock_fh.fileno())
     except OSError:
         _lock_fh.close()
         log.info("dream pass already running (lock held) — skipping")
@@ -1433,7 +1437,7 @@ def run_dream_cycle(dry_run: bool = True, safe_auto: bool = False) -> dict:
         }
     finally:
         try:
-            fcntl.flock(_lock_fh.fileno(), fcntl.LOCK_UN)
+            _locks.unlock(_lock_fh.fileno())
         except OSError:
             pass
         _lock_fh.close()

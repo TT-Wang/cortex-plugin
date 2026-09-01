@@ -33,7 +33,6 @@ Files:
 
 from __future__ import annotations
 
-import fcntl
 import json
 import logging
 import os
@@ -42,6 +41,7 @@ from pathlib import Path
 
 from memem.io_utils import atomic_write_text
 from memem.models import MEMEM_DIR, now_iso
+from memem import _locks
 
 log = logging.getLogger("memem-embedding")
 
@@ -162,7 +162,7 @@ def _rebuild_embedding_index() -> int:
     MEMEM_DIR.mkdir(parents=True, exist_ok=True)
     lock_fh = open(MEMEM_DIR / ".embeddings.lock", "w")  # noqa: SIM115 — held across the block
     try:
-        fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+        _locks.lock_ex(lock_fh.fileno())
 
         mems = _obsidian_memories()
         if not mems:
@@ -192,7 +192,7 @@ def _rebuild_embedding_index() -> int:
         return len(ids)
     finally:
         try:
-            fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
+            _locks.unlock(lock_fh.fileno())
         except OSError:
             pass
         lock_fh.close()
@@ -270,7 +270,7 @@ def _upsert_embedding(memory_id: str, text: str) -> bool:
     # POSIX-only locking pattern (telemetry.py, obsidian_store index lock).
     lock_fh = open(MEMEM_DIR / ".embeddings.lock", "w")  # noqa: SIM115 — held across the block
     try:
-        fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+        _locks.lock_ex(lock_fh.fileno())
 
         # Load current on-disk state (or start fresh)
         if _EMB_PATH.exists() and _IDS_PATH.exists():
@@ -316,7 +316,7 @@ def _upsert_embedding(memory_id: str, text: str) -> bool:
             return False
     finally:
         try:
-            fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
+            _locks.unlock(lock_fh.fileno())
         except OSError:
             pass
         lock_fh.close()

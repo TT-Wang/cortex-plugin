@@ -5,6 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+from memem import _locks
 
 # v2.1.0: miner_protocol module deleted; constants inlined here.
 FATAL_EXIT_CODE = 75
@@ -942,7 +943,6 @@ def dispatch_cli(argv: list[str], mcp) -> None:
         # This alias preserves the old CLI surface while using the unified engine.
         # The --layer, --min-cluster, --threshold flags are accepted but silently
         # ignored (dreamer uses project-scoped thresholds, no layer filter).
-        import fcntl
 
         from memem.dreamer import apply_diff, build_diff, write_diff_log
         from memem.obsidian_store import _obsidian_memories
@@ -966,7 +966,7 @@ def dispatch_cli(argv: list[str], mcp) -> None:
         # produce duplicate merges).
         _dlock = open(MEMEM_DIR / ".dream.lock", "w")
         try:
-            fcntl.flock(_dlock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _locks.lock_ex_nb(_dlock.fileno())
         except OSError:
             _dlock.close()
             print("  A dream pass is currently running (.dream.lock held) — retry shortly.")
@@ -987,7 +987,7 @@ def dispatch_cli(argv: list[str], mcp) -> None:
             apply_result = apply_diff(diff, dry_run=dry_run)
         finally:
             try:
-                fcntl.flock(_dlock.fileno(), fcntl.LOCK_UN)
+                _locks.unlock(_dlock.fileno())
             except OSError:
                 pass
             _dlock.close()

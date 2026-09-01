@@ -12,7 +12,6 @@ Obsidian vault.
 from __future__ import annotations
 
 import argparse
-import fcntl
 import json
 import os
 import re
@@ -38,6 +37,8 @@ from memem.obsidian_store import (
     invalidate_memory,
 )
 from memem.telemetry import _log_event
+from memem import _locks
+from memem import _proc
 
 log = structlog.get_logger("memem-mine-delta")
 
@@ -582,15 +583,16 @@ def _emit_session_episode(
 
     try:
         result = subprocess.run(
-            [
-                "claude", "-p",
+            _proc.claude_argv(["-p",
                 "--model", "haiku",
                 "--tools", "",
                 "--system-prompt", _EPISODE_HAIKU_SYSTEM,
-            ],
+            ]),
             input=body,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=HAIKU_TIMEOUT_SECONDS,
             env={**os.environ, "MEMEM_HOOK_DISABLE": "1"},
             start_new_session=True,
@@ -930,15 +932,16 @@ def _reconcile_candidates(
     # ---- Haiku call ------------------------------------------------------------
     try:
         result = subprocess.run(
-            [
-                "claude", "-p",
+            _proc.claude_argv(["-p",
                 "--model", "haiku",
                 "--tools", "",
                 "--system-prompt", _HAIKU_RECONCILE_SYSTEM,
-            ],
+            ]),
             input=body,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=HAIKU_TIMEOUT_SECONDS,
             env={**os.environ, "MEMEM_HOOK_DISABLE": "1"},
             start_new_session=True,
@@ -1411,7 +1414,7 @@ def run(session_id: str, transcript_path: str) -> None:
     lock_file_path = _lock_path(session_id)
     try:
         lock_fh = lock_file_path.open("w")
-        fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _locks.lock_ex_nb(lock_fh.fileno())
     except OSError:
         log.debug("mine_delta: lock held, exiting", session_id=session_id)
         return
@@ -1615,7 +1618,7 @@ def run(session_id: str, transcript_path: str) -> None:
 
     finally:
         try:
-            fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
+            _locks.unlock(lock_fh.fileno())
             lock_fh.close()
         except OSError:
             pass

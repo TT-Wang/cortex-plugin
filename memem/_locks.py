@@ -16,6 +16,17 @@ def lock_ex(fd) -> None:
         _fcntl.flock(fd, _fcntl.LOCK_EX)
 
 
+def lock_ex_nb(fd) -> None:
+    """Non-blocking exclusive lock; raises OSError if held, like flock(LOCK_NB).
+
+    On Windows this always succeeds — callers read OSError as "another run
+    holds the lock", and without real locks we cannot detect that. Same
+    single-user tradeoff as the rest of this shim.
+    """
+    if _fcntl is not None:
+        _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+
+
 def lock_sh(fd) -> None:
     if _fcntl is not None:
         _fcntl.flock(fd, _fcntl.LOCK_SH)

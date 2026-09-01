@@ -10,7 +10,6 @@ training attention weights, we adjust a per-memory relevance-feedback
 score via an exponential moving average of session-outcome signals.
 """
 
-import fcntl
 import json
 import logging
 import os
@@ -18,6 +17,7 @@ import re
 
 from memem.models import MEMEM_DIR, RELEVANCE_SCORES_FILE
 from memem.telemetry import get_session_recalls
+from memem import _locks
 
 log = logging.getLogger("memem-feedback")
 
@@ -99,7 +99,7 @@ def _save_relevance_scores(scores: dict[str, float]) -> None:
     fd = None
     try:
         fd = open(lock_path, "w")
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        _locks.lock_ex(fd)
         tmp = RELEVANCE_SCORES_FILE.with_suffix(".tmp")
         with open(tmp, "w") as fh:
             json.dump(scores, fh)
@@ -110,7 +110,7 @@ def _save_relevance_scores(scores: dict[str, float]) -> None:
         # fd guard: if open() itself raised, propagate the original OSError
         # rather than masking it with a NameError from the cleanup.
         if fd is not None:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            _locks.unlock(fd)
             fd.close()
 
 
@@ -148,7 +148,7 @@ def update_relevance_scores(session_id: str, outcome: float) -> None:
     fd = None
     try:
         fd = open(lock_path, "w")
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        _locks.lock_ex(fd)
         # Load under lock so we don't miss a concurrent write
         scores = _load_relevance_scores()
         for mid in recalled:
@@ -165,7 +165,7 @@ def update_relevance_scores(session_id: str, outcome: float) -> None:
         os.replace(tmp, RELEVANCE_SCORES_FILE)
     finally:
         if fd is not None:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            _locks.unlock(fd)
             fd.close()
 
     log.info(

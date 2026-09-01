@@ -29,7 +29,6 @@ rather than silently truncating — data loss is worse than a failed write.
 
 from __future__ import annotations
 
-import fcntl
 import os
 import re
 import subprocess
@@ -42,6 +41,8 @@ from memem.haiku_prompts import HAIKU_TIMEOUT_SECONDS
 from memem.io_utils import atomic_write_text
 from memem.models import OBSIDIAN_MEMORIES_DIR, _normalize_scope_id
 from memem.security import scan_memory_content
+from memem import _locks
+from memem import _proc
 
 log = structlog.get_logger("memem-profiles")
 
@@ -154,13 +155,13 @@ def _acquire_profiles_lock() -> Any:
     lock_path = _current_profiles_dir().parent / ".profiles.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     fd = open(lock_path, "w")  # noqa: SIM115
-    fcntl.flock(fd, fcntl.LOCK_EX)
+    _locks.lock_ex(fd)
     return fd
 
 
 def _release_profiles_lock(fd: Any) -> None:
     try:
-        fcntl.flock(fd, fcntl.LOCK_UN)
+        _locks.unlock(fd)
     except OSError:
         pass
     fd.close()
@@ -353,10 +354,12 @@ def _compact_profile(raw: str, name: str) -> str | None:
     )
     try:
         result = subprocess.run(
-            ["claude", "-p", "--model", "haiku", "--tools", "", "--system-prompt", _COMPACT_SYSTEM],
+            _proc.claude_argv(["-p", "--model", "haiku", "--tools", "", "--system-prompt", _COMPACT_SYSTEM]),
             input=raw,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=HAIKU_TIMEOUT_SECONDS,
             env={**os.environ, "MEMEM_HOOK_DISABLE": "1"},
             start_new_session=True,

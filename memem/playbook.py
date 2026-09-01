@@ -23,6 +23,7 @@ from memem.models import PLAYBOOK_DIR
 from memem.obsidian_store import _obsidian_memories
 from memem.security import scan_memory_content
 from memem.telemetry import _log_event
+from memem import _proc
 
 log = logging.getLogger("memem-playbook")
 
@@ -135,10 +136,12 @@ def _playbook_refine(project: str, force: bool = False) -> dict:
     # Haiku refine for larger projects.
     try:
         result = subprocess.run(
-            ["claude", "-p", "--model", "haiku", "--tools", "", "--system-prompt", _REFINE_SYSTEM],
+            _proc.claude_argv(["-p", "--model", "haiku", "--tools", "", "--system-prompt", _REFINE_SYSTEM]),
             input=combined,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=180,
             env={**os.environ, "MEMEM_HOOK_DISABLE": "1"},
             start_new_session=True,

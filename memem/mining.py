@@ -9,6 +9,7 @@ from memem.haiku_prompts import (
     _HAIKU_MINE_SYSTEM,
     HAIKU_TIMEOUT_SECONDS,
 )
+from memem import _proc
 log = structlog.get_logger("memem-miner")
 
 # v2.1.0: deprecated — replaced by mine_delta
@@ -107,10 +108,12 @@ def _run_haiku(body: str) -> str:
     """Run a single Haiku subprocess call and return stdout. Raises RuntimeError on failure."""
     try:
         result = subprocess.run(
-            ["claude", "-p", "--model", "haiku", "--tools", "", "--system-prompt", _HAIKU_MINE_SYSTEM],
+            _proc.claude_argv(["-p", "--model", "haiku", "--tools", "", "--system-prompt", _HAIKU_MINE_SYSTEM]),
             input=body,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=HAIKU_TIMEOUT_SECONDS,
             env={**os.environ, "MEMEM_HOOK_DISABLE": "1"},
             start_new_session=True,
@@ -288,10 +291,12 @@ def _merge_memories(existing_content: str, new_content: str) -> str:
     prompt = f"EXISTING:\n{a}\n\nNEW:\n{b}"
     try:
         result = subprocess.run(
-            ["claude", "-p", "--model", "haiku", "--tools", "", "--system-prompt", _HAIKU_MERGE_SYSTEM],
+            _proc.claude_argv(["-p", "--model", "haiku", "--tools", "", "--system-prompt", _HAIKU_MERGE_SYSTEM]),
             input=prompt,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=HAIKU_TIMEOUT_SECONDS,
             env={**os.environ, "MEMEM_HOOK_DISABLE": "1"},
             start_new_session=True,
