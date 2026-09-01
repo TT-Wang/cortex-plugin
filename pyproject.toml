@@ -27,7 +27,9 @@ dependencies = [
     # let CI resolve 2.x the day it published and took three tests down with
     # ModuleNotFoundError — a break that reached us through the manifest, not through any
     # change of ours. Lift this only together with the MCPServer migration.
-    "mcp>=1.0,<2",
+    # Lower bound is a security floor: mcp < 1.28.1 carries a high-severity advisory, and with
+    # no lockfile the resolver may pick anything the range admits.
+    "mcp>=1.28.1,<2",
     "msgpack>=1.0",
     "python-frontmatter>=1.0",
     "rank_bm25>=0.2",
