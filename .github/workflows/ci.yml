@@ -21,19 +21,15 @@ jobs:
       - name: Ruff
         run: ruff check .
       # Mypy is a RATCHET, not a pass/fail gate — because it has never passed here. 23 errors
-      # predated it. 22 are now gone (dispatch_cli's reused `result`/`active` names split per branch,
-      # a too-narrow annotation on _format_results widened to what its own docstring promised, two
-      # unannotated empty lists). The one that remains is a real find, not noise: legacy_scorecard
-      # imports memem.mining._is_agent_session, which no longer exists anywhere — run_eval() raises
-      # ImportError. It has no callers. Deleting dead code is the owner's call, so it stays on the
-      # books, visible, until that call is made.
+      # predated it; all 23 are now gone and the baseline is 0, so any new error fails the build.
+      # Keep it that way: when a fix lands, the count and this number move together.
       #
       # So: existing debt does not fail the build, NEW debt does. Nothing is silenced — the full
       # output is printed every run and the count is compared out loud. When the count drops, lower
       # MYPY_BASELINE in the same commit; a ratchet that never tightens is just noise.
       - name: Mypy (ratchet)
         env:
-          MYPY_BASELINE: "1"
+          MYPY_BASELINE: "0"
         run: |
           set +e
           mypy memem | tee /tmp/mypy.txt

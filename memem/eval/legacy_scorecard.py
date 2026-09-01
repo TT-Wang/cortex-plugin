@@ -12,11 +12,37 @@ import random
 from typing import Any
 
 
+def _is_agent_session(messages: list[str]) -> bool:
+    """Detect agent/module sessions that carry a system prompt rather than a real conversation.
+
+    Lifted verbatim out of memem.mining, which dropped it in v2.1.0 when the daemon was removed.
+    This scorecard was the only caller left, and it kept importing the vanished name — so
+    `memem --eval` has raised ImportError ever since. It is a self-contained heuristic with no
+    dependencies, so it lives here now, next to the one thing that still uses it.
+    """
+    if not messages:
+        return False
+    # Lines are prefixed with "User: " / "Assistant: "; only the first user turn matters.
+    first = ""
+    for msg in messages:
+        if msg.startswith("User: "):
+            first = msg[6:][:500]
+            break
+    if not first:
+        return False
+    return (
+        (first.startswith("# ") and any(kw in first[:80] for kw in ("Module", "Agent", "Planner", "Executor", "Critic")))
+        or first.startswith("You are a ")
+        or first.startswith("You are an ")
+        or first.startswith("You are the ")
+        or "Your job is to" in first[:200]
+        or ("## Instructions" in first[:300] and "## Output" in first[:500])
+    )
+
 def run_eval(sample_size: int = 10) -> dict:
     """Run memory system evaluation and return scorecard."""
     import time
 
-    from memem.mining import _is_agent_session
     from memem.obsidian_store import (
         _obsidian_memories,
         _word_set,
