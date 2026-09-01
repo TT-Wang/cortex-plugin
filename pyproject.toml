@@ -22,7 +22,12 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "mcp>=1.0",
+    # Upper bound is load-bearing, not caution: mcp 2.0 renamed FastMCP to MCPServer and
+    # deleted mcp.server.fastmcp, which memem/server.py imports directly. An open ">=1.0"
+    # let CI resolve 2.x the day it published and took three tests down with
+    # ModuleNotFoundError — a break that reached us through the manifest, not through any
+    # change of ours. Lift this only together with the MCPServer migration.
+    "mcp>=1.0,<2",
     "msgpack>=1.0",
     "python-frontmatter>=1.0",
     "rank_bm25>=0.2",
