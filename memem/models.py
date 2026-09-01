@@ -117,6 +117,11 @@ class Memory(TypedDict, total=False):
     obsidian_file: str  # filename only
     schema_version: int
     full_record: str  # read-time alias for essence
+    # External-store bridge fields. ``primary_index`` is the concise one-to-one
+    # abstraction used for retrieval; the full ``essence`` remains the durable
+    # value. ``external_id`` resolves the hit back to its owning canonical store.
+    external_id: str
+    primary_index: str
 
 
 # ============================================================================

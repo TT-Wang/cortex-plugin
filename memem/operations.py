@@ -8,12 +8,50 @@ from memem.obsidian_store import (
     _find_best_match,
     _is_duplicate,
     _make_memory,
+    _remove_external_memory,
     _save_memory,
     _update_memory,
+    _upsert_external_memory,
 )
 
 _REJECT_THRESHOLD = 0.92  # exact duplicate — reject
 _MERGE_THRESHOLD = 0.70   # near-duplicate — merge via Haiku
+
+
+def memory_index_upsert(
+    external_id: str,
+    value: str,
+    *,
+    primary_index: str,
+    cues: list[str] | None = None,
+    scope_id: str = "general",
+    title: str = "",
+    tags: str = "",
+    paths: list[str] | None = None,
+) -> dict:
+    """Upsert an externally-owned canonical value into Memem's L2 index.
+
+    This is the structured integration seam for agent hosts.  Unlike
+    :func:`memory_save`, it never fuzzy-merges two host records: ``external_id``
+    owns identity.  Retrieval embeds/indexes the concise ``primary_index`` plus
+    ``cues`` while the complete ``value`` remains available in Markdown.
+    """
+    domain_tags = [tag.strip() for tag in tags.split(",") if tag.strip()] if tags else []
+    return _upsert_external_memory(
+        external_id,
+        value,
+        primary_index=primary_index,
+        cues=list(cues or ()),
+        scope_id=scope_id,
+        title=title,
+        tags=domain_tags,
+        paths=paths,
+    )
+
+
+def memory_index_remove(external_id: str) -> bool:
+    """Remove one external record from active recall without deleting history."""
+    return _remove_external_memory(external_id)
 
 
 def memory_save(content: str, title: str = "", scope_id: str = "default",

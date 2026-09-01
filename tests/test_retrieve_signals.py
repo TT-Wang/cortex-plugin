@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import importlib
 import json
-import math
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -21,7 +20,6 @@ from typing import Any
 
 import numpy as np
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -359,7 +357,7 @@ class TestLinkSignal:
         seed = _make_hit(seed_id, related=[seed_id[:8]])
         other = _make_hit(_make_uuid())  # second candidate needed for top-5 computation
         candidates = [seed, other]
-        sigs = retrieve_mod._rerank_signals(candidates, {}, scope_id="", vault_idx={})
+        retrieve_mod._rerank_signals(candidates, {}, scope_id="", vault_idx={})
         # seed_id is in the top-5 and thus in seed_id_prefixes; its own id[:8] is also in
         # seed_related_prefixes. But since it's in seed_id_prefixes, the reverse-link path
         # is skipped (elif mid[:8] not in seed_id_prefixes). The forward path checks
@@ -744,6 +742,14 @@ class TestThreeWayRRF:
             f"got mem_x={result['mem_x']:.6f}, mem_y={result['mem_y']:.6f}"
         )
 
+    def test_equal_channel_scores_share_rank(self, retrieve_mod):
+        """Tied channel scores must not be ordered by dict or filesystem order."""
+        first = retrieve_mod._rrf_fusion({}, {"mem_a": 0.0, "mem_b": 0.0}, k=60)
+        reversed_input = retrieve_mod._rrf_fusion({}, {"mem_b": 0.0, "mem_a": 0.0}, k=60)
+
+        assert first["mem_a"] == first["mem_b"]
+        assert reversed_input == first
+
 
 # ---------------------------------------------------------------------------
 # 9. Scope_id param: retrieve() accepts scope_id without error
@@ -806,7 +812,8 @@ def test_session_id_in_recall_log(isolated_env, tmp_path):
     import importlib
     import json
 
-    from memem import models, recall_log, retrieve as retrieve_mod_pkg
+    from memem import models
+    from memem import retrieve as retrieve_mod_pkg
 
     # Write a fake LAST_BRIEF_PATH with a known session_id
     fake_session_id = "test-session-abc123"
@@ -826,7 +833,8 @@ def test_session_id_missing_file_returns_empty(isolated_env):
     """_read_session_id() returns '' when LAST_BRIEF_PATH does not exist."""
     import importlib
 
-    from memem import models, retrieve as retrieve_mod_pkg
+    from memem import models
+    from memem import retrieve as retrieve_mod_pkg
 
     # Ensure file doesn't exist
     if models.LAST_BRIEF_PATH.exists():
@@ -841,7 +849,8 @@ def test_session_id_malformed_file_returns_empty(isolated_env):
     """_read_session_id() returns '' when LAST_BRIEF_PATH has invalid JSON."""
     import importlib
 
-    from memem import models, retrieve as retrieve_mod_pkg
+    from memem import models
+    from memem import retrieve as retrieve_mod_pkg
 
     models.LAST_BRIEF_PATH.parent.mkdir(parents=True, exist_ok=True)
     models.LAST_BRIEF_PATH.write_text("not valid json{{")
@@ -976,8 +985,6 @@ class TestPathBonus:
         )
 
         matched_hit = next((r for r in results if r["id"] == path_matched_id), None)
-        no_match_hit = next((r for r in results if r["id"] == path_no_match_id), None)
-
         # Query without paths_context for baseline scores
         _reset_retrieve_caches(mod)
         results_no_ctx = mod.retrieve(
@@ -1059,6 +1066,7 @@ class TestPathBonus:
 def test_retrieve_paths_context_in_signature():
     """retrieve() must have paths_context parameter."""
     import inspect
+
     from memem.retrieve import retrieve
     params = inspect.signature(retrieve).parameters
     assert "paths_context" in params, (

@@ -413,6 +413,28 @@ def _strip_generated_related_section(body: str) -> str:
     return _GENERATED_RELATED_SECTION_RE.sub("", body).rstrip()
 
 
+def _retrieval_value(mem: dict) -> str:
+    """Return the text Memem should index for one durable value.
+
+    Native Memem notes index their full essence as before.  Records bridged
+    from a canonical external store can instead provide ``primary_index``: a
+    stable abstraction whose cue facets live in ``keys``.  The full body stays
+    readable and retrievable by id, but does not make every incidental detail a
+    semantic search anchor.
+    """
+    return str(mem.get("primary_index") or mem.get("essence") or "")
+
+
+def _embedding_value(mem: dict) -> str:
+    """Compose one record embedding without exposing an external full body."""
+    value = _retrieval_value(mem)
+    if mem.get("external_id"):
+        cues = " ".join(str(key) for key in (mem.get("keys") or ()))
+        if cues:
+            value = f"{value} — {cues}"
+    return value
+
+
 # ---------------------------------------------------------------------------
 # Memory factory
 # ---------------------------------------------------------------------------
@@ -421,10 +443,12 @@ def _make_memory(content: str, title: str, tags: list[str] | None = None,
                  project: str = "general", source_type: str = "user",
                  source_session: str = "", importance: int = 3,
                  layer: int | None = None,
-                 keys: list[str] | None = None) -> dict:
+                 keys: list[str] | None = None,
+                 memory_id: str | None = None,
+                 allow_short: bool = False) -> dict:
     # Reject junk content
     stripped = content.strip().strip(".")
-    if len(stripped) < 10:
+    if len(stripped) < 10 and not allow_short:
         raise ValueError(f"Content too short ({len(stripped)} chars): rejected as junk")
 
     threat = scan_memory_content(content)
@@ -438,7 +462,7 @@ def _make_memory(content: str, title: str, tags: list[str] | None = None,
 
     normalized_project = (project or "general").strip() or "general"
     mem = {
-        "id": str(uuid.uuid4()),
+        "id": memory_id or str(uuid.uuid4()),
         "title": title,
         "essence": content,
         "domain_tags": tags or [],
@@ -533,10 +557,10 @@ def _write_obsidian_memory(mem: dict):
     # Build metadata dict in canonical field order (sort_keys=False preserves it)
     # Sanitize keys using the same _safe_tag helper as tags (cap each to 60 chars).
     raw_keys = mem.get("keys") or []
-    if isinstance(raw_keys, list):
-        safe_keys = [_safe_tag(str(k))[:60] for k in raw_keys if _safe_tag(str(k))]
-    else:
-        safe_keys = []
+    safe_keys = (
+        [_safe_tag(str(k))[:60] for k in raw_keys if _safe_tag(str(k))]
+        if isinstance(raw_keys, list) else []
+    )
 
     meta: dict[str, Any] = {
         "id": mem["id"],
@@ -545,6 +569,14 @@ def _write_obsidian_memory(mem: dict):
         "project": _safe_tag(project),
         "tags": safe_tags,
     }
+    # A canonical host may keep the high-fidelity value in the markdown body
+    # while asking Memem to index only a concise abstraction plus cue keys.  This
+    # is deliberately optional: ordinary Memem notes retain their historic
+    # title+body indexing behaviour.
+    if mem.get("external_id"):
+        meta["external_id"] = _safe_tag(str(mem["external_id"]))[:200]
+    if mem.get("primary_index"):
+        meta["primary_index"] = _safe_tag(str(mem["primary_index"]))[:500]
     # keys: omit entirely when empty (canonical-order: after tags, before related)
     if safe_keys:
         meta["keys"] = safe_keys
@@ -790,6 +822,10 @@ def _parse_obsidian_memory_file(md_file: Path) -> dict | None:
         mem["title"] = str(fm_meta["title"])
     if fm_meta.get("project"):
         mem["project"] = str(fm_meta["project"])
+    if fm_meta.get("external_id"):
+        mem["external_id"] = str(fm_meta["external_id"])
+    if fm_meta.get("primary_index"):
+        mem["primary_index"] = str(fm_meta["primary_index"])
 
     # tags / related — library parses inline and block YAML lists to Python lists
     raw_tags = fm_meta.get("tags", [])
@@ -1298,13 +1334,26 @@ def _save_memory(mem: dict):
     """Save memory to Obsidian vault."""
     _require_obsidian_writable()
 
+    # Externally-owned values deliberately keep their complete body pull-only.
+    # Contradiction/link discovery is part of retrieval indexing too, so it
+    # must see the same abstraction+cues as FTS/embeddings instead of quietly
+    # reintroducing every incidental body detail through graph centrality.
+    semantic_content = mem.get("essence", "")
+    if mem.get("external_id"):
+        semantic_content = "\n".join(
+            part for part in (
+                _retrieval_value(mem),
+                "\n".join(str(key) for key in (mem.get("keys") or ())),
+            ) if part
+        )
+
     # Check for contradictions
-    contradictions = _check_contradictions(mem.get("essence", ""), mem.get("project", "default"))
+    contradictions = _check_contradictions(semantic_content, mem.get("project", "default"))
     if contradictions:
         mem["contradicts"] = [c["memory_id"] for c in contradictions]
 
     # Compute related links first so we only write the memory once.
-    content = mem.get("essence", "")
+    content = semantic_content
     mem_id = mem.get("id", "")
     if content and mem_id:
         try:
@@ -1329,7 +1378,7 @@ def _save_memory(mem: dict):
     try:
         from memem.embedding_index import _upsert_embedding  # noqa: PLC0415
         upsert_text = (
-            (mem.get("title", "") or "") + " — " + (mem.get("essence", "") or "")
+            (mem.get("title", "") or "") + " — " + _embedding_value(mem)
         ).strip()
         _upsert_embedding(mem.get("id", ""), upsert_text)
     except Exception as exc:  # noqa: BLE001
@@ -1338,7 +1387,11 @@ def _save_memory(mem: dict):
         from memem.graph_index import _refresh_edges_for_memory
         refreshed = _find_memory(mem.get("id", ""))
         if refreshed:
-            _refresh_edges_for_memory(refreshed)
+            graph_value = refreshed
+            if refreshed.get("external_id"):
+                graph_value = dict(refreshed)
+                graph_value["essence"] = semantic_content
+            _refresh_edges_for_memory(graph_value)
     except Exception as exc:
         log.debug("graph refresh failed for saved memory %s: %s", mem.get("id", "")[:8], exc)
 
@@ -1440,7 +1493,7 @@ def _update_memory(
         from memem.embedding_index import _upsert_embedding  # noqa: PLC0415
         _upsert_embedding(
             mem.get("id", ""),
-            ((mem.get("title", "") or "") + " — " + (mem.get("essence", "") or "")).strip(),
+            ((mem.get("title", "") or "") + " — " + _embedding_value(mem)).strip(),
         )
     except Exception as exc:  # noqa: BLE001
         log.debug("embedding upsert (update) failed for %s: %s", mem.get("id", "")[:8], exc)
@@ -1451,6 +1504,107 @@ def _update_memory(
             _refresh_edges_for_memory(refreshed_mem)
     except Exception as exc:
         log.debug("graph refresh failed for updated memory %s: %s", memory_id[:8], exc)
+
+
+def _find_external_memory(external_id: str) -> dict | None:
+    """Resolve a canonical host id without exposing Memem's internal UUID."""
+    identity = str(external_id or "").strip()
+    if not identity:
+        return None
+    _ensure_cache_warm()
+    with _VAULT_CACHE_LOCK:
+        for mem in _VAULT_CACHE.values():
+            if str(mem.get("external_id") or "") == identity:
+                return mem
+    return None
+
+
+def _upsert_external_memory(
+    external_id: str,
+    value: str,
+    *,
+    primary_index: str,
+    cues: list[str] | None = None,
+    scope_id: str = "general",
+    title: str = "",
+    tags: list[str] | None = None,
+    paths: list[str] | None = None,
+) -> dict:
+    """Idempotently index one canonical record owned by another host.
+
+    The external id is stable and maps to a deterministic Memem UUID.  This
+    path intentionally bypasses fuzzy dedup and LLM merging: the owning store
+    has already decided record identity and lifecycle.  Memem owns retrieval,
+    cues, graph links, and the human-readable projection—not canonical meaning.
+    """
+    identity = str(external_id or "").strip()
+    if not identity or any(ch in identity for ch in "\r\n\x00") or len(identity) > 200:
+        raise ValueError("external_id must be 1-200 single-line characters")
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("value must be non-empty text")
+    abstraction = " ".join(str(primary_index or "").split())
+    if not abstraction:
+        raise ValueError("primary_index must be non-empty")
+    threat = scan_memory_content(f"{abstraction}\n{value}")
+    if threat:
+        raise ValueError(threat)
+
+    # External ids are deterministic, so two host processes can target the
+    # same note.  Serialize the full lookup→mutate→write cycle just like native
+    # Memem updates; the ordinary ADD path's random-id assumption does not hold
+    # here.
+    write_lock = _acquire_vault_write_lock()
+    try:
+        existing = _find_external_memory(identity)
+        if existing is None:
+            stable_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"memem-external:{identity}"))
+            mem = _make_memory(
+                value,
+                title or abstraction[:120],
+                tags=list(tags or ()),
+                project=_normalize_scope_id(scope_id),
+                source_type="external-index",
+                keys=list(cues or ()),
+                memory_id=stable_id,
+                allow_short=True,
+            )
+        else:
+            # Detach from the live cache object before mutation.  _save_memory
+            # refreshes the cache only after the atomic markdown write succeeds.
+            mem = dict(existing)
+            mem.update({
+                "essence": value,
+                "title": title or abstraction[:120],
+                "domain_tags": list(tags or ()),
+                "project": _normalize_scope_id(scope_id),
+                "source_type": "external-index",
+                "keys": list(cues or ()),
+                "updated_at": _now(),
+                "status": "active",
+                "valid_to": "",
+                "invalid_at": None,
+                "replaced_by": None,
+            })
+        mem["external_id"] = identity
+        mem["primary_index"] = abstraction[:500]
+        mem["paths"] = [str(path) for path in (paths or ()) if str(path).strip()]
+        _save_memory(mem)
+    finally:
+        _release_vault_write_lock(write_lock)
+    stored = _find_external_memory(identity)
+    return dict(stored or mem)
+
+
+def _remove_external_memory(external_id: str) -> bool:
+    """Retire an external index projection while retaining historical text."""
+    write_lock = _acquire_vault_write_lock()
+    try:
+        mem = _find_external_memory(external_id)
+        if not mem:
+            return False
+        return _deprecate_memory(mem.get("id", ""), reason="external-index-removed")
+    finally:
+        _release_vault_write_lock(write_lock)
 
 
 def _add_related_link(memory_id: str, related_memory_id: str) -> str:

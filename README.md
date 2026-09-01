@@ -357,6 +357,33 @@ As of v2.9.0, memem exposes **6 MCP tools** (reduced from 14; removed tools are 
 | `memory_import` | Python: `memem.operations.memory_import()` |
 | `memory_remind` | Python: `memem.cross_vault.search_across_vaults()` |
 
+### Structured host index (Python, v2.10+)
+
+Agent hosts that already own canonical record identity should use the external-index protocol instead of
+`memory_save`:
+
+```python
+from memem.operations import memory_index_remove, memory_index_upsert
+from memem.retrieve import retrieve
+
+memory_index_upsert(
+    "host:record-123",
+    full_value,
+    primary_index="Parser bounds regression fix",
+    cues=["request boundary", "src/parser.py"],
+    scope_id="host.project:stable-project-id",
+)
+hits = retrieve(
+    "parser validation", scope_id="host.project:stable-project-id",
+    scope_mode="hard", writeback=False,
+)
+memory_index_remove("host:record-123")
+```
+
+`external_id` is stable and bypasses fuzzy merge. The full Markdown value remains readable, while FTS, BM25,
+embeddings, contradiction checks, and graph links index only `primary_index` plus cues. `scope_mode="hard"`
+filters candidates before ranking; the default `"soft"` preserves ordinary Memem cross-project behavior.
+
 ## How do I inspect slices or writeback manually?
 
 Use the CLI when you want raw slice JSON, continuity debugging, or explicit

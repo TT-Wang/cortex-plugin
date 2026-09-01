@@ -58,10 +58,22 @@ _unavailable_logged = False
 
 
 def _try_import():
-    """Import sentence-transformers + numpy lazily. Returns (st, np) or (None, None)."""
+    """Import the optional embedding dependencies independently.
+
+    NumPy is sufficient for loading, persisting, and searching an already-built
+    index.  Sentence Transformers is required only when text must be encoded.
+    Returning ``(None, np)`` therefore preserves read access to an existing
+    index in lightweight installations that omit the model dependency.
+    """
     global _unavailable_logged
     try:
         import numpy as _np
+    except ImportError as exc:
+        if not _unavailable_logged:
+            log.info("embedding side-channel disabled (numpy not installed: %s)", exc)
+            _unavailable_logged = True
+        return None, None
+    try:
         from sentence_transformers import SentenceTransformer
     except ImportError as exc:
         if not _unavailable_logged:
@@ -71,7 +83,7 @@ def _try_import():
                 exc,
             )
             _unavailable_logged = True
-        return None, None
+        return None, _np
     return SentenceTransformer, _np
 
 
@@ -171,7 +183,19 @@ def _rebuild_embedding_index() -> int:
             _persist()
             return 0
         texts = [
-            (mem.get("title", "") + " — " + mem.get("essence", "")).strip()
+            (
+                mem.get("title", "")
+                + " — "
+                + (
+                    (
+                        (mem.get("primary_index") or "")
+                        + " — "
+                        + " ".join(str(key) for key in (mem.get("keys") or ()))
+                    ).strip(" —")
+                    if mem.get("external_id")
+                    else mem.get("essence", "")
+                )
+            ).strip()
             for mem in mems
         ]
         ids = [mem.get("id", "") for mem in mems]

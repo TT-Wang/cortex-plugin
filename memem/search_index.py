@@ -115,7 +115,9 @@ def _insert_memory_row(conn: sqlite3.Connection, mem: dict) -> None:
         (
             mem.get("id", ""),
             mem.get("title", ""),
-            mem.get("essence", ""),
+            # External canonical records keep their full high-fidelity value in
+            # Markdown but expose a concise primary abstraction for retrieval.
+            mem.get("primary_index") or mem.get("essence", ""),
             _normalize_scope_id(str(mem.get("project", "general") or "general")),
             combined_tags,
             json.dumps(mem.get("related", [])),

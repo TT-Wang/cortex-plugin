@@ -62,7 +62,14 @@ import numpy as np
 
 import memem.recall_log as _recall_log
 import memem.settings as _settings
-from memem.models import MEMEM_DIR, LAST_BRIEF_PATH, OBSIDIAN_MEMORIES_DIR, TELEMETRY_FILE, parse_iso_dt, _normalize_scope_id
+from memem.models import (
+    LAST_BRIEF_PATH,
+    MEMEM_DIR,
+    OBSIDIAN_MEMORIES_DIR,
+    TELEMETRY_FILE,
+    _normalize_scope_id,
+    parse_iso_dt,
+)
 
 
 def _read_session_id() -> str:
@@ -95,14 +102,17 @@ _LAYER_PAT = re.compile(r"^layer:\s*(\d+)", re.M)
 _IMPORTANCE_PAT = re.compile(r"^importance:\s*(\d+)", re.M)
 _STATUS_PAT = re.compile(r"^status:\s*(.*)$", re.M)
 _INVALID_AT_PAT = re.compile(r"^invalid_at:\s*(.*)$", re.M)
+_EXTERNAL_ID_PAT = re.compile(r"^external_id:\s*(.*)$", re.M)
+_PRIMARY_INDEX_PAT = re.compile(r"^primary_index:\s*(.*)$", re.M)
 # keys extraction: block list (same pattern as tags — tolerates trailing-newline and empty items)
 _KEYS_BLOCK_PAT = re.compile(r"^keys:\n((?:- .*(?:\n|$))+)", re.M)
 _VERSION_PAT = re.compile(r"v\d+\.\d+(?:\.\d+)?", re.I)
 _DATE_PAT = re.compile(r"\d{4}-\d{2}-\d{2}")
+_BM25_TOKEN_PAT = re.compile(r"[\w]+(?:-[\w]+)*", re.UNICODE)
 
 # Module-level caches (lazy-loaded, mtime-invalidated).
 # CPython GIL makes "set after compute" safe — see module docstring.
-_model: "Any | None" = None  # SentenceTransformer instance (lazy-loaded)
+_model: Any | None = None  # SentenceTransformer instance (lazy-loaded)
 _vault_idx_cache: dict | None = None
 _vault_idx_mtime: float = 0
 _vault_idx_count: int = 0  # Phase 4.5 fix: also track file count so deletes invalidate
@@ -139,9 +149,11 @@ class MemoryHit(TypedDict, total=False):
     tags: list[str]
     related: list[str]
     status: str
+    external_id: str
+    primary_index: str
 
 
-def _get_model() -> "Any | None":
+def _get_model() -> Any | None:
     """Lazily load the sentence-transformers model (singleton per process).
 
     Returns None if sentence-transformers is not installed (optional dep).
@@ -196,10 +208,8 @@ def load_vault_index(scope_id: str = "") -> dict[str, dict]:
             front_end = -1
             if text.startswith("---"):
                 front_end = text.find("\n---", 4)
-            if front_end > 0:
-                front = text[: front_end + 4]  # include the closing '\n---'
-            else:
-                front = text[:2000]
+            # Include the closing ``\n---`` when frontmatter is well formed.
+            front = text[: front_end + 4] if front_end > 0 else text[:2000]
             id_m = _ID_PAT.search(front)
             if not id_m:
                 continue
@@ -246,6 +256,10 @@ def load_vault_index(scope_id: str = "") -> dict[str, dict]:
             # EXCLUSION: skip deprecated memories and memories with a non-empty invalid_at
             if status_val == "deprecated" or invalid_at_val:
                 continue
+            external_id_m = _EXTERNAL_ID_PAT.search(front)
+            external_id_val = (external_id_m.group(1) if external_id_m else "").strip().strip("'\"")
+            primary_index_m = _PRIMARY_INDEX_PAT.search(front)
+            primary_index_val = (primary_index_m.group(1) if primary_index_m else "").strip().strip("'\"")
             # tags extraction — handle both block list and inline-empty `tags: []`.
             # `(?:\n|$)` tolerates a missing trailing newline on the last item
             # (non-canonical/imported files); empty items (`- `) are filtered.
@@ -288,6 +302,8 @@ def load_vault_index(scope_id: str = "") -> dict[str, dict]:
                 "tags": tags_val,
                 "keys": keys_val,
                 "related": related_val,
+                "external_id": external_id_val,
+                "primary_index": primary_index_val,
             }
         except Exception:  # noqa: BLE001
             continue
@@ -440,13 +456,22 @@ def _build_bm25(vault_idx: dict) -> tuple | None:
         # NOTE: keys are intentionally NOT included in the embedding text composition
         # (that would invalidate the existing .npy embedding matrix).
         keys_text = " ".join(mem.get("keys", []) or [])
+        # External canonical records opt into harmonic representation: the
+        # durable body remains available by id, while retrieval indexes only a
+        # stable primary abstraction and its cue anchors. Ordinary Memem notes
+        # preserve the historic full-body behaviour.
+        indexed_value = mem.get("primary_index") or mem.get("body_full", "")
         text = (
             mem.get("title", "")
             + " "
-            + mem.get("body_full", "")
+            + indexed_value
             + (" " + keys_text if keys_text else "")
         ).lower()
-        tokens = text.split()
+        # Tokenize punctuation as boundaries while retaining Unicode words,
+        # underscores, and hyphenated search keys.  Plain ``split()`` made an
+        # exact query such as ``yesterday`` miss the title ``Yesterday's
+        # memory``; all-zero BM25 scores then produced filesystem-order ranking.
+        tokens = _BM25_TOKEN_PAT.findall(text.casefold())
         if not tokens:
             continue  # skip empty bodies
         corpus_ids.append(mid)
@@ -522,14 +547,26 @@ def _rrf_fusion(
     1/(k+rank) term for every ID that appears in the FTS result list.
     IDs absent from a channel get a penalty rank = max(channel_size) + 1.
     """
-    cosine_ranks = {mid: r for r, (mid, _) in enumerate(
-        sorted(cosine_scores.items(), key=lambda x: -x[1]), start=1)}
-    bm25_ranks = {mid: r for r, (mid, _) in enumerate(
-        sorted(bm25_scores.items(), key=lambda x: -x[1]), start=1)}
+    def _competition_ranks(scores: dict[str, float]) -> dict[str, int]:
+        """Rank scores without inventing relevance differences for ties."""
+        ranked: dict[str, int] = {}
+        previous_score: float | None = None
+        current_rank = 0
+        for position, (mid, score) in enumerate(
+            sorted(scores.items(), key=lambda item: (-item[1], item[0])),
+            start=1,
+        ):
+            if previous_score is None or score != previous_score:
+                current_rank = position
+                previous_score = score
+            ranked[mid] = current_rank
+        return ranked
+
+    cosine_ranks = _competition_ranks(cosine_scores)
+    bm25_ranks = _competition_ranks(bm25_scores)
     fts_ranks: dict[str, int] = {}
     if fts_scores:
-        fts_ranks = {mid: r for r, (mid, _) in enumerate(
-            sorted(fts_scores.items(), key=lambda x: -x[1]), start=1)}
+        fts_ranks = _competition_ranks(fts_scores)
     all_ids = set(cosine_ranks) | set(bm25_ranks) | set(fts_ranks)
     missing_cosine = len(cosine_ranks) + 1
     missing_bm25 = len(bm25_ranks) + 1
@@ -692,6 +729,7 @@ def retrieve(
     scope_id: str = "",
     writeback: bool = True,
     paths_context: list[str] | None = None,
+    scope_mode: str = "soft",
 ) -> list[MemoryHit]:
     """Main retrieval: three-way RRF (cosine+BM25+FTS) + rerank signals + scope bonus.
 
@@ -702,8 +740,11 @@ def retrieve(
            "cli_slice"). When None, retrieve() skips its own log_recall call
            entirely — callers that log their own telemetry (e.g. server.py
            active_memory_slice) should pass None to prevent double-logging.
-        scope_id: Optional project scope. When non-empty, memories in the same
-           project receive a soft bonus (never a hard filter). Default '' = no bonus.
+        scope_id: Optional project scope.
+        scope_mode: ``"soft"`` preserves Memem's cross-project recall and gives
+           same-project memories a ranking bonus. ``"hard"`` restricts every
+           candidate channel before ranking; agent hosts should use it when a
+           project identity is an isolation/admission boundary.
         writeback: When False, skip the fire-and-forget access-count writeback
            thread. Callers that record access themselves (recall._search_memories
            with record_access=True) pass False to prevent double-counting the
@@ -747,9 +788,20 @@ def retrieve(
         path-matched memory won't beat a strongly-relevant non-matched one.
     """
     t0 = time.monotonic()
-    vault_idx = load_vault_index()
-    if not vault_idx:
+    if scope_mode not in {"soft", "hard"}:
+        raise ValueError("scope_mode must be 'soft' or 'hard'")
+    all_vault_idx = load_vault_index()
+    if not all_vault_idx:
         return []
+    vault_idx = all_vault_idx
+    if scope_mode == "hard" and scope_id:
+        normalized_scope = _normalize_scope_id(scope_id)
+        vault_idx = {
+            mid: mem for mid, mem in all_vault_idx.items()
+            if _normalize_scope_id(str(mem.get("project") or "general")) == normalized_scope
+        }
+        if not vault_idx:
+            return []
     emb_data = load_embeddings()
     # emb_data is None when embeddings.npy / embedding_ids.json are absent.
     # When sentence-transformers is also absent, we skip the cosine channel
@@ -801,14 +853,20 @@ def retrieve(
                 cosine_scores[ids[i]] = float(scores[i])
 
     # BM25 channel (cached)
-    bm25_data = _build_bm25(vault_idx)
+    # Build/cache the global corpus once; hard-scope filtering is applied to
+    # returned ids below. Building a per-scope corpus under the old global cache
+    # key would make the first queried scope poison subsequent scope results.
+    bm25_data = _build_bm25(all_vault_idx)
     bm25_scores: dict[str, float] = {}
     if bm25_data is not None:
         bm25_ids, bm25_index = bm25_data
-        query_tokens = query.lower().split()
+        query_tokens = _BM25_TOKEN_PAT.findall(query.casefold())
         if query_tokens:
             raw_bm25 = bm25_index.get_scores(query_tokens)
-            bm25_scores = {bm25_ids[i]: float(raw_bm25[i]) for i in range(len(bm25_ids))}
+            bm25_scores = {
+                bm25_ids[i]: float(raw_bm25[i])
+                for i in range(len(bm25_ids)) if bm25_ids[i] in vault_idx
+            }
 
     # FTS channel — third RRF channel for EVERY query (not just version/date literals).
     # Call _search_fts with all-projects scope ("default" → normalized to "general" → no filter).
@@ -817,7 +875,8 @@ def retrieve(
     fts_scores: dict[str, float] = {}
     try:
         from memem.search_index import _search_fts  # noqa: PLC0415 — lazy import
-        fts_ids = _search_fts(query, scope_id="default", limit=20)
+        fts_scope = scope_id if scope_mode == "hard" and scope_id else "default"
+        fts_ids = _search_fts(query, scope_id=fts_scope, limit=20)
         n_fts = len(fts_ids)
         for rank_idx, fts_mid in enumerate(fts_ids):
             if fts_mid in vault_idx:  # only include IDs present in active vault
@@ -895,7 +954,10 @@ def retrieve(
             created_dt = parse_iso_dt(hit.get("created", ""))
             if created_dt is not None and start_dt <= created_dt <= end_dt:
                 hit["score"] = hit["score"] * 1.2
-        cosine_candidates.sort(key=lambda h: h["score"], reverse=True)
+    # Signal multipliers can change order even for non-temporal queries.  Sort
+    # once after every rerank signal has been applied so MMR receives the true
+    # relevance order rather than the pre-signal RRF order.
+    cosine_candidates.sort(key=lambda h: h["score"], reverse=True)
 
     # MMR re-ranking: diversify top-20 cosine candidates down to k results.
     # L0 / decay_immune memories are pre-seeded (always included).

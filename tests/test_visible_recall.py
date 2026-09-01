@@ -10,6 +10,7 @@ from the bash heredoc as a stand-alone function for unit testability).
 """
 
 import os
+from pathlib import Path
 
 # Mirror of the function defined inside hooks/auto-recall.sh's Python heredoc.
 # Kept in sync via test_hook_python_body_matches.
@@ -86,8 +87,7 @@ def test_hook_python_body_matches():
     replacing the daemon-based active_slice pipeline. The old _build_system_message
     was removed as part of this simplification.
     """
-    from pathlib import Path
-    hook = Path("/home/claude-user/cortex-plugin/hooks/auto-recall.sh").read_text()
+    hook = (Path(__file__).resolve().parents[1] / "hooks" / "auto-recall.sh").read_text()
     # v2.0.0 hook must use the new retrieve+render pipeline
     assert "from memem.retrieve import retrieve" in hook, (
         "auto-recall.sh v2.0.0 must use memem.retrieve.retrieve"

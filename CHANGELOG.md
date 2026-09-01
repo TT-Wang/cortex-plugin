@@ -10,6 +10,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > they have been left untouched as historical record. See the v0.7.0 entry
 > for the rename details, backward-compat strategy, and migration path.
 
+## v2.10.0 — Structured external-host index protocol (2026-07-13)
+
+### Added
+
+- **Stable external identity** — `memory_index_upsert` and `memory_index_remove` let an agent host project
+  canonical records by ID without Memem fuzzy-merging or redefining them. Repeated upserts are idempotent and
+  cross-process serialized; removal retires the projection without deleting its history.
+- **Harmonic representation** — an external record keeps its complete Markdown value but indexes one concise
+  `primary_index` plus bounded cue keys. FTS, BM25, embeddings, contradiction detection, and graph linking do
+  not treat incidental full-body detail as a retrieval anchor.
+- **Hard-scope retrieval** — `retrieve(..., scope_mode="hard")` filters every candidate channel before ranking,
+  so host project/user/agent partitions are admission boundaries rather than ranking hints.
+
+### Fixed
+
+- **Portable embedding-index reload** — persisted NumPy indexes now load and remain queryable even when the
+  optional sentence-transformers package is unavailable in the host process.
+- **Unicode-aware lexical retrieval** — BM25 tokenization separates punctuation instead of folding it into
+  adjacent words, restoring exact lexical matches for ordinary prose and non-ASCII text.
+- **Stable tied-result ranking** — reciprocal-rank fusion assigns competition ranks to tied scores, and results
+  are sorted again after temporal and feedback signals mutate their final score.
+
+The ordinary `memory_save` and soft cross-project `retrieve` behavior are unchanged.
+
 ## v2.9.7 — Windows-importable core (fcntl shim) (2026-07-03)
 
 ### Fixed
