@@ -673,7 +673,6 @@ class TestTenseRewriteUserAuthoredExcluded:
     def test_user_authored_memory_not_scanned(self):
         from datetime import UTC, datetime, timedelta
 
-        from memem.dreamer import find_tense_rewrites
 
         old_ts = (datetime.now(UTC) - timedelta(days=60)).isoformat()
         user_mem = {

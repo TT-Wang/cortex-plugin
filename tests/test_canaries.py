@@ -186,6 +186,7 @@ def test_check_canaries_in_doctor_prints_canary_check_line(
     results (WARN path) which is fine — we only need the 'Canary check' line.
     """
     import importlib
+
     import memem.cli as cli_module
     import memem.retrieve as retrieve_mod
 
@@ -209,6 +210,7 @@ def test_check_canaries_in_doctor_prints_warn_when_not_planted(
 ):
     """When canaries are not planted, each should print WARN (not raise)."""
     import importlib
+
     import memem.cli as cli_module
     import memem.retrieve as retrieve_mod
 

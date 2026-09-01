@@ -47,6 +47,7 @@ def test_normalize_scope_id_alias():
 def test_mine_one_chunk_keys_cap_and_sanitize(monkeypatch):
     """_mine_one_chunk caps keys to 8 items and 60 chars each, discards non-strings."""
     import json
+
     from memem import mining
 
     raw_keys = [
@@ -91,6 +92,7 @@ def test_mine_one_chunk_keys_cap_and_sanitize(monkeypatch):
 def test_mine_one_chunk_keys_missing_gives_empty(monkeypatch):
     """_mine_one_chunk sets keys=[] when the field is missing from Haiku output."""
     import json
+
     from memem import mining
 
     haiku_output = json.dumps([{
@@ -109,6 +111,7 @@ def test_mine_one_chunk_keys_missing_gives_empty(monkeypatch):
 def test_mine_one_chunk_keys_null_gives_empty(monkeypatch):
     """_mine_one_chunk sets keys=[] when keys is explicitly null."""
     import json
+
     from memem import mining
 
     haiku_output = json.dumps([{
@@ -127,6 +130,7 @@ def test_mine_one_chunk_keys_null_gives_empty(monkeypatch):
 def test_mine_one_chunk_keys_over_8_capped(monkeypatch):
     """_mine_one_chunk caps keys to max 8 items."""
     import json
+
     from memem import mining
 
     haiku_output = json.dumps([{

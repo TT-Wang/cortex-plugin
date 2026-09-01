@@ -7,7 +7,6 @@ via render_slice_markdown.
 """
 
 import logging
-from typing import Any
 
 from memem.models import _normalize_scope_id, now_iso
 

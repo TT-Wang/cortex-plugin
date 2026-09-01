@@ -15,8 +15,6 @@ _merge_memories is a lazy import inside memory_save, so patch "memem.mining._mer
 from __future__ import annotations
 
 import importlib
-import pytest
-
 
 # ---------------------------------------------------------------------------
 # Helpers

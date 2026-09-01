@@ -48,7 +48,7 @@ class TestDominantPathsQualifies:
 
     def test_single_file_edited_three_times_qualifies(self):
         """A file edited exactly _PATH_MIN_FREQ (3) times must appear in results."""
-        from memem.mine_delta import extract_dominant_paths, _PATH_MIN_FREQ
+        from memem.mine_delta import _PATH_MIN_FREQ, extract_dominant_paths
 
         turns = [
             _make_assistant_turn([_edit_block("memem/server.py")]),

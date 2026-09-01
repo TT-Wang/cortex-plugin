@@ -11,7 +11,9 @@ GT ids were assigned by query INTENT and verified against the vault (titles insp
 Edge/noise queries (no meaningful ground truth) are excluded. A query with an EMPTY GT
 set is a known corpus-gap (honest miss until the memory is recovered).
 """
-import os, sys
+import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("MEMEM_TELEMETRY_SOURCE", "benchmark")
 from memem.retrieve import retrieve
@@ -48,7 +50,7 @@ def recall_at(k):
         if found:
             hits += 1; rows.append((cat, q, "hit", f"rank {found}"))
         else:
-            rows.append((cat, q, "MISS", ">%d" % k))
+            rows.append((cat, q, "MISS", f">{k}"))
     return hits, gaps, rows
 
 

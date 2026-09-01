@@ -24,7 +24,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # Core math helpers
 # ---------------------------------------------------------------------------
@@ -123,7 +122,11 @@ def compare_artifacts(
     abs_deltas: list[float] = []
     low_overlap: list[str] = []
 
-    for old_row, new_row in zip(old_data, new_data):
+    if len(old_data) != len(new_data):
+        # Silently truncating to the shorter run would compare fewer rows than it reports.
+        print(f"[warn] row count differs: old={len(old_data)} new={len(new_data)}; "
+              f"comparing the first {min(len(old_data), len(new_data))}")
+    for old_row, new_row in zip(old_data, new_data, strict=False):
         if old_row["query"] != new_row["query"]:
             print(
                 f"[warn] query mismatch: {old_row['query']!r} vs {new_row['query']!r}",
@@ -184,7 +187,6 @@ def live_compare(
     for entry in baseline_data:
         query = entry["query"]
         old_hits = entry["hits"]
-        old_ids = [h["id"] for h in old_hits[:top]]
 
         t0 = time.monotonic()
         try:
@@ -294,8 +296,8 @@ def render_markdown_report(
     # --- Aggregate table ---
     lines.append("## Aggregate statistics")
     lines.append("")
-    lines.append(f"| Metric | Value |")
-    lines.append(f"|--------|-------|")
+    lines.append("| Metric | Value |")
+    lines.append("|--------|-------|")
     lines.append(f"| Queries compared | {n} |")
     lines.append(f"| Mean Jaccard@10 | {mj10:.3f} |")
     lines.append(f"| Mean Jaccard@5 | {mj5:.3f} |")
@@ -307,8 +309,8 @@ def render_markdown_report(
     # --- Per-query table ---
     lines.append("## Per-query breakdown")
     lines.append("")
-    lines.append(f"| # | Category | J@10 | J@5 | Top-1 ✓ | Shared | Abs Δrank | Query |")
-    lines.append(f"|---|----------|------|-----|---------|--------|-----------|-------|")
+    lines.append("| # | Category | J@10 | J@5 | Top-1 ✓ | Shared | Abs Δrank | Query |")
+    lines.append("|---|----------|------|-----|---------|--------|-----------|-------|")
     for i, row in enumerate(rows):
         cat = row.get("category", "")[:12]
         j10 = f"{row['jaccard_at_10']:.2f}"

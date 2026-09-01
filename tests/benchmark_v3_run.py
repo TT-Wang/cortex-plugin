@@ -9,12 +9,16 @@ temporal-recall dimension — EverMe's claimed strength — is tested fairly.
 
 Reuses v2's dual-system capture helpers; only the query set changes.
 """
-import json, os, sys
+import json
+import os
+import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ.setdefault("MEMEM_TELEMETRY_SOURCE", "benchmark")
 
 import importlib.util as _u
+
 _spec = _u.spec_from_file_location("bv2", str(Path(__file__).parent / "benchmark_v2_run.py"))
 bv2 = _u.module_from_spec(_spec); _spec.loader.exec_module(bv2)
 

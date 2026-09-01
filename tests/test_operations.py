@@ -175,7 +175,7 @@ def test_memory_save_paths_none_writes_no_paths_field(tmp_vault, tmp_cortex_dir)
                 front_end = content.find("\n---", 4)
                 front = content[:front_end + 4] if front_end > 0 else content[:2000]
                 assert "paths:" not in front, (
-                    f"Memory saved without paths= should not have paths: in frontmatter"
+                    "Memory saved without paths= should not have paths: in frontmatter"
                 )
                 break
 

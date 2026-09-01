@@ -156,7 +156,6 @@ def query_class_matches(query: str, query_class: str) -> bool:
 def excluded_memory_ids_for_query(query: str) -> set[str]:
     """Return the set of memory_ids that should be EXCLUDED from candidates
     for this query, per the recorded lessons."""
-    import time as _time
     excluded = set()
     for lesson in list_lessons():
         if query_class_matches(query, lesson.get("query_class", "")):

@@ -347,10 +347,7 @@ def _search_memories(
     else:
         primary = primary[:limit]
 
-    if expand_links:
-        results = _expand_graph(primary, max_total=limit * 2, hops=2)
-    else:
-        results = primary
+    results = _expand_graph(primary, max_total=limit * 2, hops=2) if expand_links else primary
 
     # Track access for returned memories (skip for internal/assembly calls)
     if record_access:

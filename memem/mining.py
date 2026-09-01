@@ -9,6 +9,7 @@ from memem.haiku_prompts import (
     _HAIKU_MINE_SYSTEM,
     HAIKU_TIMEOUT_SECONDS,
 )
+
 log = structlog.get_logger("memem-miner")
 
 # v2.1.0: deprecated — replaced by mine_delta

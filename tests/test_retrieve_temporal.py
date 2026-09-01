@@ -1308,7 +1308,7 @@ class TestRRFScaleFixes:
         ids = [str(uuid.uuid4()) for _ in range(3)]
         for i, mid in enumerate(ids):
             # Make one in-window (yesterday) and two out-of-window
-            if i == 0:
+            if i == 0:  # noqa: SIM108 — a ternary would drop the per-branch comments below
                 created = (now - timedelta(hours=30)).isoformat()  # yesterday
             else:
                 created = (now - timedelta(days=30 + i)).isoformat()  # old
@@ -1360,7 +1360,7 @@ class TestRRFScaleFixes:
 
         # Make vectors mutually orthogonal-ish via Gram-Schmidt
         ortho_vecs = []
-        for i, v in enumerate(vecs):
+        for v in vecs:
             for prev in ortho_vecs:
                 v = v - float(np.dot(v, prev)) * prev
             if np.linalg.norm(v) > 1e-6:

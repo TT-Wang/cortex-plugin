@@ -17,7 +17,6 @@ from pathlib import Path
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -89,10 +88,7 @@ def _write_active_memory(memories_dir: Path, title: str, mem_id: str,
     filename = f"{slug}-{mem_id[:8]}.md"
 
     # Serialize tags — block style for non-empty, inline for empty
-    if tags:
-        tags_yaml = "tags:\n" + "".join(f"- {t}\n" for t in tags)
-    else:
-        tags_yaml = "tags: []\n"
+    tags_yaml = "tags:\n" + "".join(f"- {t}\n" for t in tags) if tags else "tags: []\n"
 
     # Serialize related — block style, only if non-empty
     related_yaml = ""
@@ -591,9 +587,7 @@ Some content without keys field.
 
 def test_bm25_includes_keys_terms(isolated_vault):
     """BM25 should find a memory by a key term not in title/body_full."""
-    import importlib
 
-    from memem import models, obsidian_store, search_index
     memories_dir, _retrieve = isolated_vault
 
     # Write a memory whose keys contain a term absent from title and body

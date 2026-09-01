@@ -18,7 +18,6 @@ from pathlib import Path
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -173,7 +172,7 @@ class TestBuildToolDigestToolUse:
         ]
         result = _build_tool_digest(turns)
         assert "Bash: pytest tests/ -q" in result, f"Expected Bash entry, got: {result!r}"
-        assert "more lines" not in result, f"Bash digest must not include lines after the first"
+        assert "more lines" not in result, "Bash digest must not include lines after the first"
 
     def test_bash_long_first_line_truncated_at_80(self):
         from memem.mine_delta import _build_tool_digest
@@ -418,7 +417,7 @@ class TestBuildToolDigestCap:
     """Total digest capped at 600 chars; excess entries replaced with '…[+N more]'."""
 
     def test_cap_with_truncation_marker(self):
-        from memem.mine_delta import _build_tool_digest, _TOOL_DIGEST_CAP
+        from memem.mine_delta import _TOOL_DIGEST_CAP, _build_tool_digest
 
         # Create enough entries to exceed the cap
         # Each entry: "Edit path/to/filePath_XX.py" ≈ 30 chars + newline
@@ -457,7 +456,7 @@ class TestBuildToolDigestCap:
         )
 
     def test_digest_under_cap_not_truncated(self):
-        from memem.mine_delta import _build_tool_digest, _TOOL_DIGEST_CAP
+        from memem.mine_delta import _TOOL_DIGEST_CAP, _build_tool_digest
 
         # A single Bash entry is well under 600 chars
         turns = [

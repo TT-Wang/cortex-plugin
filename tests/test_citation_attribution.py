@@ -13,13 +13,11 @@ from __future__ import annotations
 
 import importlib
 import json
-import re
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
-from datetime import UTC, datetime, timedelta
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -358,7 +356,7 @@ def _make_nested_turns(real_id8: str, fake_hex8: str) -> list[dict]:
 
     Uses the real Claude Code nested schema.
     """
-    turns = [
+    return [
         # User turn with enough content
         {
             "type": "user",
@@ -409,7 +407,6 @@ def _make_nested_turns(real_id8: str, fake_hex8: str) -> list[dict]:
             },
         },
     ] * 2  # duplicate to ensure enough chars
-    return turns
 
 
 class TestMineDeltaCitationScan:
@@ -417,8 +414,8 @@ class TestMineDeltaCitationScan:
 
     def test_only_real_id_cited_not_fake_hex(self, mine_env, monkeypatch):
         import memem.mine_delta as md
-        import memem.recall_log as rl
         import memem.models as mdl
+        import memem.recall_log as rl
 
         # Reload modules to pick up monkeypatched MEMEM_DIR
         importlib.reload(mdl)
@@ -503,7 +500,7 @@ class TestMineDeltaCitationScan:
 
         assert len(citation_rows) >= 1, (
             f"Expected at least one citation row to be emitted. "
-            f"All rows: {[json.loads(l) for l in log_lines]}"
+            f"All rows: {[json.loads(line) for line in log_lines]}"
         )
 
         # The real id8 must be cited
@@ -523,8 +520,8 @@ class TestMineDeltaCitationScan:
     def test_no_citation_when_no_match(self, mine_env, monkeypatch):
         """When assistant text has no tokens matching recalled ids, no citation row emitted."""
         import memem.mine_delta as md
-        import memem.recall_log as rl
         import memem.models as mdl
+        import memem.recall_log as rl
 
         importlib.reload(mdl)
         importlib.reload(rl)
@@ -582,8 +579,8 @@ class TestMineDeltaCitationScan:
 
         log_lines = log_path.read_text().splitlines()
         citation_rows = [
-            json.loads(l) for l in log_lines
-            if json.loads(l).get("type") == "citation"
+            json.loads(line) for line in log_lines
+            if json.loads(line).get("type") == "citation"
         ]
         assert len(citation_rows) == 0, (
             f"Expected no citation rows when no match. Got: {citation_rows}"

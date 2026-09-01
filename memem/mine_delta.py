@@ -117,7 +117,7 @@ def _head_tail_sample(messages: list, max_chars: int = _MAX_EXTRACT_CHARS) -> st
 _KIND_TO_TYPE_TAG = {"procedural": "type:procedural", "episodic": "type:episodic"}
 
 
-def _with_kind_tag(kind: "str | None", tags: list) -> list:
+def _with_kind_tag(kind: str | None, tags: list) -> list:
     """Prepend the type:* tag for a recognized candidate kind (procedural/episodic).
 
     Keeps mined memories discoverable by the kind-aware recall paths
@@ -890,7 +890,9 @@ def _reconcile_candidates(
 
     # ---- Build batched Haiku prompt --------------------------------------------
     sections: list[str] = []
-    for i, ((cand, _best, _score), neighbors) in enumerate(zip(surviving, candidate_neighbors)):
+    # strict=True is free here: candidate_neighbors gets exactly one entry per surviving
+    # candidate in the loop above, so a length mismatch means that invariant broke.
+    for i, ((cand, _best, _score), neighbors) in enumerate(zip(surviving, candidate_neighbors, strict=True)):
         content = cand.get("content") or cand.get("essence") or ""
         title = cand.get("title") or "Untitled"
         # Surface kind so the reconciler can apply the type-aware rules
@@ -1490,10 +1492,11 @@ def run(session_id: str, transcript_path: str) -> None:
 
         # 8. Write memories to vault — reconcile-at-write (C1+C4)
         # Wrap the entire reconcile path; on any exception fall back to plain
-        # ADD-all (v2.6 behavior) to keep memories_written accurate.
-        memories_written = 0
+        # ADD-all (v2.6 behavior). The count is vestigial: the episode gate below moved
+        # off it in v2.7 (see the comment there), so it is bound but deliberately unread.
+        _memories_written = 0
         try:
-            _saved_mems, memories_written, idempotent_skips = _reconcile_candidates(
+            _saved_mems, _memories_written, idempotent_skips = _reconcile_candidates(
                 memories, session_id
             )
             if idempotent_skips:
@@ -1507,7 +1510,7 @@ def run(session_id: str, transcript_path: str) -> None:
                 session_id=session_id,
                 error=str(exc),
             )
-            memories_written = _fallback_add_all(memories, session_id)
+            _memories_written = _fallback_add_all(memories, session_id)
 
         # 8b. Emit per-session episode if session was substantive.
         # Gate on EXTRACTION CANDIDATES, not vault writes: with the reconciler,

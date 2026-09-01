@@ -363,7 +363,7 @@ class TestStableEpisodeId:
 
         # --- Second delta: append more turns and advance offset ---
         # Re-open transcript from where first run left off
-        second_offset = md._read_offset(session_id)
+        md._read_offset(session_id)
         extra_turns = _make_turns(4)
         with transcript.open("a") as f:
             for t in extra_turns:
@@ -476,8 +476,9 @@ class TestProjectFromTranscriptPath:
 
     def test_home_project_returns_general(self, tmp_path):
         """Transcript under ~/.claude/projects/<munged-home>/<sid>.jsonl → 'general'."""
-        import memem.mine_delta as md
         from pathlib import Path as _Path
+
+        import memem.mine_delta as md
         home = str(_Path.home())
         munged_home = home.replace("/", "-")
         # e.g. /home/claude-user → -home-claude-user
@@ -490,8 +491,9 @@ class TestProjectFromTranscriptPath:
     def test_nested_project_returns_basename(self, tmp_path):
         """Transcript under ~/.claude/projects/<munged-home>-cortex-plugin/<sid>.jsonl
         → 'cortex-plugin'."""
-        import memem.mine_delta as md
         from pathlib import Path as _Path
+
+        import memem.mine_delta as md
         home = str(_Path.home())
         munged_home = home.replace("/", "-")
         transcript = f"{home}/.claude/projects/{munged_home}-cortex-plugin/abc123.jsonl"
@@ -502,8 +504,9 @@ class TestProjectFromTranscriptPath:
 
     def test_deep_nested_project(self, tmp_path):
         """Transcript for /home/user/work/myproject → 'work-myproject'."""
-        import memem.mine_delta as md
         from pathlib import Path as _Path
+
+        import memem.mine_delta as md
         home = str(_Path.home())
         munged_home = home.replace("/", "-")
         transcript = f"{home}/.claude/projects/{munged_home}-work-myproject/abc123.jsonl"

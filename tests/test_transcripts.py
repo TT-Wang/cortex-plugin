@@ -1,7 +1,6 @@
 """Tests for the canonical parse_jsonl_session in memem/transcripts.py."""
 import importlib
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -271,6 +270,7 @@ def test_fts_roundtrip_real_session(fts_env, tmp_path):
     3. transcript_search for a term that exists returns non-empty result
     """
     import sqlite3
+
     import memem.transcripts as tr
 
     # Use the real fixture
@@ -299,8 +299,8 @@ def test_fts_fallback_when_db_absent(fts_env, monkeypatch):
     With DB absent AND no real session dirs (SESSIONS_DIRS pointing at empty),
     the function must return 'No matching transcripts found' without raising.
     """
-    import memem.transcripts as tr
     import memem.session_state as ss
+    import memem.transcripts as tr
 
     # Point SESSIONS_DIRS at a tmp dir with no JSONL files
     empty_dir = fts_env / "empty_sessions"
@@ -350,8 +350,8 @@ def test_fts_output_shape_matches_grep_path(fts_env, tmp_path, monkeypatch):
     - '**A:**' prefix for assistant text
     - '*Session:' for filename annotation
     """
-    import memem.transcripts as tr
     import memem.session_state as ss
+    import memem.transcripts as tr
 
     # Index the real fixture (FTS path)
     tr.index_session(_REAL_SESSION_FIXTURE)
@@ -394,6 +394,7 @@ def test_fts_output_shape_matches_grep_path(fts_env, tmp_path, monkeypatch):
 def test_fts_index_session_idempotent(fts_env):
     """Calling index_session twice on the same file produces the same row count (no duplicates)."""
     import sqlite3
+
     import memem.transcripts as tr
 
     tr.index_session(_REAL_SESSION_FIXTURE)
@@ -501,8 +502,8 @@ def test_grep_fallback_bounded(fts_env, tmp_path, monkeypatch):
     (no hang) and scans at most `cap` files (visible via monkeypatching the
     warning emitter to capture calls).
     """
-    import memem.transcripts as tr
     import memem.session_state as ss
+    import memem.transcripts as tr
 
     # Create 10 JSONL files each large enough to pass the 5000-byte size floor.
     sessions_dir = tmp_path / "sessions" / "proj"

@@ -722,12 +722,13 @@ def dispatch_cli(argv: list[str], mcp) -> None:
         # test/benchmark traffic. Advisory only — no purge performed here.
         try:
             import json as _json
-            from memem.recall_log import _LOG_PATH as _rlog
+
+            from memem.recall_log import _LOG_PATH as _RLOG
             _TEST_QUERIES = {"test query", "warmup query"}
             _TEST_SUBSTRINGS = ("alpha beta memory", "cache test memory")
             _contaminated = 0
-            if _rlog.exists():
-                with open(_rlog, encoding="utf-8") as _fh:
+            if _RLOG.exists():
+                with open(_RLOG, encoding="utf-8") as _fh:
                     for _line in _fh:
                         _line = _line.strip()
                         if not _line:
@@ -756,6 +757,7 @@ def dispatch_cli(argv: list[str], mcp) -> None:
         # Transcript FTS advisory: warn if the index is missing or empty.
         try:
             import sqlite3 as _sqlite3
+
             from memem.transcripts import _db_path as _transcript_db_path
             _fts_db = _transcript_db_path()
             if not _fts_db.exists():

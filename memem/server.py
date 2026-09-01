@@ -39,8 +39,8 @@ def _build_mcp():
         return re.findall(r'\[([0-9a-f]{8})\]', md)
 
     import memem.recall_log as _recall_log
-    from memem.recall import _get_current_session_id
     from memem.operations import memory_save as _memory_save
+    from memem.recall import _get_current_session_id
     from memem.recall import (
         memory_get as _memory_get,
     )
@@ -50,8 +50,8 @@ def _build_mcp():
     from memem.recall import (
         memory_timeline as _memory_timeline,
     )
-    from memem.transcripts import transcript_search as _transcript_search
     from memem.transcripts import recent_session_paths as _recent_session_paths
+    from memem.transcripts import transcript_search as _transcript_search
 
     mcp = FastMCP("memem")
 

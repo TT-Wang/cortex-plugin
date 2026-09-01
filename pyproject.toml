@@ -81,7 +81,8 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "RET", "SIM"]
 ignore = [
     "E501", "N806", "N803",
     "E402",   # module imports not at top — used for lazy/circular avoidance
-    "E701",   # multiple statements on one line
+    "E701", "E702",   # multiple statements on one line (colon form and semicolon form:
+              # the same call; E702 was simply missed when E701 was decided)
     "B904",   # raise ... from err — style, not correctness
     "C401",   # set comprehension vs generator
     "SIM102", # nested-if readability preference
@@ -93,6 +94,10 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "memem/__init__.py" = ["F401"]
+# Every one of these binds a fixture for its SIDE EFFECT (the helper writes a memory
+# file into the vault) and then asserts on the vault, not on the handle. Checked one
+# by one before ignoring: no forgotten assertions among them.
+"tests/test_purge_contaminated.py" = ["F841"]
 
 [tool.mypy]
 python_version = "3.11"

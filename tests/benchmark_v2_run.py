@@ -8,8 +8,13 @@ queries, queries drawn from the SHARED corpus both systems mined.
 This script only CAPTURES raw top-k results + latency + token cost from each
 system into JSON; an LLM-judge workflow scores relevance afterwards.
 """
-import json, os, sys, time, urllib.request
+import json
+import os
+import sys
+import time
+import urllib.request
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ.setdefault("MEMEM_TELEMETRY_SOURCE", "benchmark")
 

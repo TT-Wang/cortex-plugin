@@ -24,11 +24,9 @@ from __future__ import annotations
 
 import importlib
 import json
-import os
 from pathlib import Path
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Fixture path
@@ -132,6 +130,7 @@ def _patch_subprocess(md, monkeypatch, reconcile_resp: str, episode_summary: str
     Episode calls are identified by _EPISODE_HAIKU_SYSTEM.
     """
     import subprocess as _subprocess
+
     from memem.haiku_prompts import _HAIKU_RECONCILE_SYSTEM
 
     original_run = _subprocess.run
@@ -324,7 +323,7 @@ class TestFullReconcilePipeline:
             "Candidate ADD: the reconciler caps UPDATE+SUPERSEDE at 5 per delta.",
         )
         assert stable_add_id in add_files[0].read_text(), (
-            f"Stable uuid5 id should appear in ADD memory file"
+            "Stable uuid5 id should appear in ADD memory file"
         )
 
         # ---- Verify UPDATE: merged essence + extra tags + extra keys + updated_at ----
@@ -507,6 +506,7 @@ class TestReconcileExceptionFallback:
 
         # Make subprocess.run raise for reconcile calls → triggers exception fallback
         import subprocess as _subprocess
+
         from memem.haiku_prompts import _HAIKU_RECONCILE_SYSTEM
         original_run = _subprocess.run
 

@@ -10,11 +10,7 @@ from __future__ import annotations
 
 import importlib
 import json
-import os
 import sqlite3
-import tempfile
-from pathlib import Path
-
 
 # ---------------------------------------------------------------------------
 # B11: _classify_relation — false supersedes edge regression

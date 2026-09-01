@@ -18,12 +18,9 @@ from __future__ import annotations
 
 import importlib
 import json
-import os
-import uuid
 from pathlib import Path
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -148,7 +145,6 @@ class TestReconcileAddOp:
 
     def test_add_op_uses_stable_id(self, mine_env, monkeypatch):
         import memem.mine_delta as md
-        import memem.obsidian_store as store
 
         session_id = "test-reconcile-add-op"
         transcript = mine_env["tmp_path"] / "session.jsonl"
@@ -307,7 +303,6 @@ class TestReconcileNoop:
 
     def test_noop_skips_save(self, mine_env, monkeypatch):
         import memem.mine_delta as md
-        import memem.obsidian_store as store
 
         session_id = "test-reconcile-noop"
         transcript = mine_env["tmp_path"] / "session.jsonl"
@@ -489,7 +484,6 @@ class TestReconcilePrefilterNoop:
 
     def test_prefilter_high_score_noop(self, mine_env, monkeypatch):
         import memem.mine_delta as md
-        import memem.obsidian_store as store
 
         session_id = "test-reconcile-prefilter"
         transcript = mine_env["tmp_path"] / "session.jsonl"
@@ -610,8 +604,6 @@ class TestReconcileAuditEvents:
 
     def test_audit_events_written(self, mine_env, monkeypatch):
         import memem.mine_delta as md
-        import memem.obsidian_store as store
-        from memem.models import EVENT_LOG
 
         session_id = "test-audit-events"
         transcript = mine_env["tmp_path"] / "session.jsonl"
@@ -703,7 +695,6 @@ class TestReconcilePrefilterAuditEvent:
 
     def test_prefilter_writes_reconcile_noop(self, mine_env, monkeypatch):
         import memem.mine_delta as md
-        from memem.models import EVENT_LOG
 
         session_id = "test-prefilter-audit"
         transcript = mine_env["tmp_path"] / "session.jsonl"

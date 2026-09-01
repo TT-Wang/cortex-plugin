@@ -118,7 +118,7 @@ def index_session(path: Path) -> None:
     try:
         mtime = path.stat().st_mtime
         import datetime as _dt
-        session_date = _dt.datetime.fromtimestamp(mtime, tz=_dt.timezone.utc).strftime("%Y-%m-%d")
+        session_date = _dt.datetime.fromtimestamp(mtime, tz=_dt.UTC).strftime("%Y-%m-%d")
     except Exception:
         session_date = ""
     # Derive project from parent directory name (same logic as mine_delta)

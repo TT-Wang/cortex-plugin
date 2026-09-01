@@ -1,6 +1,5 @@
 """Tests for closed-loop relevance scoring (memem/feedback.py + integration)."""
 
-import fcntl
 import importlib
 import json
 
@@ -165,8 +164,9 @@ def test_ranking_includes_feedback(tmp_path, monkeypatch):
 
 def test_save_relevance_scores_uses_flock(tmp_path, monkeypatch):
     """_save_relevance_scores must use fcntl.flock for concurrency safety."""
-    import memem.feedback as fb
     import inspect
+
+    import memem.feedback as fb
 
     importlib.reload(fb)
     monkeypatch.setattr(fb, "RELEVANCE_SCORES_FILE", tmp_path / "scores.json")

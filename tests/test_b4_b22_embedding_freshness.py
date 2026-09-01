@@ -15,7 +15,6 @@ import json
 import sys
 import types
 import uuid
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -91,7 +90,7 @@ def test_retrieve_degrades_gracefully_without_sentence_transformers(tmp_path, mo
     import memem.retrieve as _retrieve
     importlib.reload(_retrieve)
     monkeypatch.setattr(_retrieve, "_model", None)
-    original_get_model = _retrieve._get_model
+    _retrieve._get_model  # noqa: B018 — touch the attribute to assert it exists
 
     def _failing_get_model():
         return None  # simulate sentence-transformers absent

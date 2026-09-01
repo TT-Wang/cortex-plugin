@@ -551,7 +551,6 @@ class TestCliMigrateLayersCommand:
         """Phase 4.5 (v2.8): --apply alone is sufficient — the dry-run report
         review is the human gate; requiring an undocumented --yes made every
         documented apply invocation exit 1. --yes remains an accepted no-op."""
-        import memem.migrate_layers as ml
         from memem import cli
         importlib.reload(cli)
         mcp_stub = SimpleNamespace(run=lambda **_: None)

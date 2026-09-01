@@ -337,6 +337,7 @@ def test_ab_compute_query_stats_top1_mismatch():
 def test_ab_compare_artifacts_aggregation(tmp_path):
     """compare_artifacts returns correct mean Jaccard and top-1 stability."""
     import json
+
     from scripts.ab_compare_engines import compare_artifacts
 
     old_data = [
@@ -422,8 +423,8 @@ def test_re_run_query_recall_mode_routes_to_search_memories(monkeypatch):
 
 def test_re_run_query_tool_active_slice_routes_to_retrieve(monkeypatch):
     """row with mode='tool_active_slice' must call retrieve(), not _search_memories."""
-    from memem import eval_replay
     import memem.retrieve as _retrieve_mod
+    from memem import eval_replay
 
     retrieve_called = []
     search_called = []

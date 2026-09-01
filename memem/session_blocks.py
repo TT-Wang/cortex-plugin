@@ -319,10 +319,7 @@ def render_session_start(scope_id: str) -> str:
                     all_memories=all_mems,
                     limit_chars=remaining,
                 )
-                if ep_block:
-                    content = non_episode_content + "\n\n" + ep_block
-                else:
-                    content = non_episode_content
+                content = non_episode_content + "\n\n" + ep_block if ep_block else non_episode_content
             except Exception:  # noqa: BLE001
                 content = non_episode_content
         else:

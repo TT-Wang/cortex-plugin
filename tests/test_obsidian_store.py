@@ -544,6 +544,7 @@ def test_keys_roundtrip(tmp_vault, tmp_cortex_dir):
     """Round-trip: _make_memory + _write_obsidian_memory + _parse_obsidian_memory_file
     preserves keys field correctly."""
     import importlib
+
     from memem import models, obsidian_store, search_index
     importlib.reload(models)
     importlib.reload(search_index)
@@ -572,6 +573,7 @@ def test_keys_roundtrip(tmp_vault, tmp_cortex_dir):
 def test_keys_empty_when_absent(tmp_vault, tmp_cortex_dir):
     """Memories without keys get keys=[] in parsed output (default tolerant)."""
     import importlib
+
     from memem import models, obsidian_store, search_index
     importlib.reload(models)
     importlib.reload(search_index)
@@ -603,6 +605,7 @@ def test_keys_empty_when_absent(tmp_vault, tmp_cortex_dir):
 def test_keys_omitted_in_frontmatter_when_empty(tmp_vault, tmp_cortex_dir):
     """_write_obsidian_memory omits the keys: field entirely when keys is []."""
     import importlib
+
     from memem import models, obsidian_store, search_index
     importlib.reload(models)
     importlib.reload(search_index)

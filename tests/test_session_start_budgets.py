@@ -12,18 +12,14 @@ Covers:
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from memem.session_blocks import (
     render_episode_catalog,
     render_session_start,
     render_working_rules,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -104,7 +100,7 @@ def test_render_session_start_all_blocks_present(tmp_path, monkeypatch):
     all_mems = _make_all_mems_fixture()
 
     # Patch _obsidian_memories in session_blocks' render_session_start
-    with patch("memem.obsidian_store._obsidian_memories", return_value=all_mems) as mock_om:
+    with patch("memem.obsidian_store._obsidian_memories", return_value=all_mems):
         result = render_session_start("myproject")
 
     # Profiles block: should contain the user profile heading
