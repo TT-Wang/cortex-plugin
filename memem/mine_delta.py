@@ -98,13 +98,15 @@ def _head_tail_sample(messages: list, max_chars: int = _MAX_EXTRACT_CHARS) -> st
     if len(joined) <= max_chars:
         return joined
     head_budget = max_chars * 6 // 10
-    head, hlen = [], 0
+    head: list[str] = []
+    hlen = 0
     for m in messages:
         if head and hlen + len(m) > head_budget:
             break
         head.append(m)
         hlen += len(m) + 2
-    tail, tlen = [], 0
+    tail: list[str] = []
+    tlen = 0
     for m in reversed(messages):
         if tail and tlen + len(m) > (max_chars - head_budget):
             break

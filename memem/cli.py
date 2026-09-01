@@ -699,11 +699,11 @@ def dispatch_cli(argv: list[str], mcp) -> None:
                     "Usage: memem eval replay --against <baseline.ndjson> [--k 5] [--dual-engine]"
                 )
             if dual_engine:
-                result = run_dual_engine_replay(baseline, k=k)
-                print(format_dual_engine_report(result))
+                replay_result = run_dual_engine_replay(baseline, k=k)
+                print(format_dual_engine_report(replay_result))
             else:
-                result = replay(baseline, k=k)
-                print(format_replay_report(result))
+                replay_result = replay(baseline, k=k)
+                print(format_replay_report(replay_result))
             return
 
         raise SystemExit(f"Unknown eval subcommand: {sub} (try: status, export, replay)")
@@ -906,9 +906,9 @@ def dispatch_cli(argv: list[str], mcp) -> None:
             if any(marker in haystack for marker in _CONTAMINATION_MARKERS):
                 contaminated.append(mem)
 
-        # Split contaminated into active (to act on) and excluded.
+        # Split contaminated into active_contaminated (to act on) and excluded.
         excluded = [m for m in contaminated if (m.get("id") or "")[:8] in exclude_set]
-        active = [m for m in contaminated if (m.get("id") or "")[:8] not in exclude_set]
+        active_contaminated = [m for m in contaminated if (m.get("id") or "")[:8] not in exclude_set]
 
         if not contaminated:
             print("--purge-contaminated: no contaminated memories found.")
@@ -916,18 +916,18 @@ def dispatch_cli(argv: list[str], mcp) -> None:
 
         if not apply:
             # Dry-run: print matches and exit without touching the vault.
-            print(f"--purge-contaminated (dry-run): {len(active)} contaminated memories found.")
+            print(f"--purge-contaminated (dry-run): {len(active_contaminated)} contaminated memories found.")
             print("Run with --apply to delete. Matches:")
-            for mem in active:
+            for mem in active_contaminated:
                 mid = (mem.get("id") or "")[:8]
                 title = (mem.get("title") or "(untitled)")[:80]
                 print(f"  {mid}  {title}")
             excluded_suffix = f"  |  excluded: {len(excluded)}" if excluded else ""
-            print(f"\nTotal: {len(active)}  |  Run with --apply to delete.{excluded_suffix}")
+            print(f"\nTotal: {len(active_contaminated)}  |  Run with --apply to delete.{excluded_suffix}")
         else:
             deleted = 0
             failed = 0
-            for mem in active:
+            for mem in active_contaminated:
                 mid = mem.get("id") or ""
                 ok = _delete_memory(mid)
                 if ok:
@@ -935,7 +935,7 @@ def dispatch_cli(argv: list[str], mcp) -> None:
                 else:
                     failed += 1
             excluded_suffix = f"  excluded: {len(excluded)}." if excluded else ""
-            print(f"--purge-contaminated: deleted {deleted}, failed {failed} (of {len(active)} contaminated).{excluded_suffix}")
+            print(f"--purge-contaminated: deleted {deleted}, failed {failed} (of {len(active_contaminated)} contaminated).{excluded_suffix}")
         return
 
     if cmd == "--consolidate":
@@ -1011,17 +1011,17 @@ def dispatch_cli(argv: list[str], mcp) -> None:
         safe_auto = "--safe-auto" in argv
         # --safe-auto implies not dry-run (it applies additive categories automatically)
         dry_run = False if safe_auto and not apply else not apply
-        result = run_dream_cycle(dry_run=dry_run, safe_auto=safe_auto)
-        diff = result["diff"]
-        apply_result = result["apply_result"]
-        if result["dry_run"]:
+        dream_result = run_dream_cycle(dry_run=dry_run, safe_auto=safe_auto)
+        diff = dream_result["diff"]
+        apply_result = dream_result["apply_result"]
+        if dream_result["dry_run"]:
             mode = "DRY-RUN"
-        elif result.get("safe_auto"):
+        elif dream_result.get("safe_auto"):
             mode = "SAFE-AUTO"
         else:
             mode = "APPLIED"
         print(f"[memem dreamer] {mode}")
-        print(f"  Diff log:            {result['diff_path']}")
+        print(f"  Diff log:            {dream_result['diff_path']}")
         print(f"  Vault size:          {diff['vault_size']}")
         print(f"  Demotion candidates: {len(diff.get('demotion_candidates', []))}")
         print(f"  Contradiction pairs: {len(diff.get('contradiction_pairs', []))}")
@@ -1040,9 +1040,9 @@ def dispatch_cli(argv: list[str], mcp) -> None:
                 print(f"  Errors ({len(apply_result['errors'])}):")
                 for err in apply_result["errors"]:
                     print(f"    - {err}")
-        if result["dry_run"]:
+        if dream_result["dry_run"]:
             print("  (Pass --apply to execute all proposals)")
-        elif result.get("safe_auto"):
+        elif dream_result.get("safe_auto"):
             print("  (Reflections + tense-rewrites applied; demotions/merges await --apply)")
         return
 

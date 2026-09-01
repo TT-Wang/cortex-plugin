@@ -3,6 +3,7 @@ import os
 import re
 import sqlite3
 import time
+from collections.abc import Sequence
 from pathlib import Path
 
 import structlog
@@ -442,7 +443,7 @@ def _extract_conversation(jsonl_path: str) -> list[str]:
     return lines
 
 
-def _format_results(results: list[tuple[str, dict, str]]) -> str:
+def _format_results(results: Sequence[tuple[str | float, dict, str]]) -> str:
     """Render a list of (score_or_rank, pair, filename) tuples as markdown.
 
     Shared between FTS5 and grep paths so output shape is identical.
